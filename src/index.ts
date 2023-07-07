@@ -82,13 +82,13 @@ export const connector = async () => {
     const provisionPermission = async (action: AttributeChangeOp, account: Account, entitlements: string[]) => {
         logger.info(`Roles| Executing ${action} operation for ${account.uuid}/${entitlements}`)
         if (action === AttributeChangeOp.Add) {
-            const capabilities: string[] = (await client.getCapabilties(account.attributes.externalId as string)) || []
+            const capabilities: string[] = (await client.getCapabilities(account.attributes.externalId as string)) || []
             for (const capability of entitlements) {
                 capabilities.push(capability)
             }
             await client.addRole(account.attributes.externalId as string, capabilities)
         } else if (action === AttributeChangeOp.Remove) {
-            const capabilities: string[] = (await client.getCapabilties(account.attributes.externalId as string)) || []
+            const capabilities: string[] = (await client.getCapabilities(account.attributes.externalId as string)) || []
             let updatedCapabilities: string[] = capabilities
             for (const capability of entitlements) {
                 updatedCapabilities = updatedCapabilities.filter((cap) => cap !== capability)
