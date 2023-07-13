@@ -19,11 +19,10 @@ export class IDNClient {
         this.patSecret = config.patSecret
         this.IDToken1 = config.IDToken1
         this.IDToken2 = config.IDToken2
-        this.sailpointlogin=config.sailpointlogin
+        this.sailpointlogin = config.sailpointlogin
         this.expiryDate = new Date()
         this.expiryDate1 = new Date()
         this.batchSize = 100
-
     }
 
     async getAccessToken(): Promise<string | undefined> {
@@ -53,42 +52,44 @@ export class IDNClient {
     }
 
     async obtainAccessToken(): Promise<string | undefined> {
-
-        const pm = require('postman-request');
-        const cheerio = require('cheerio');
+        const pm = require('postman-request')
+        const cheerio = require('cheerio')
         if (new Date() >= this.expiryDate1) {
             // Use a Promise to obtain the access token
             const accessTokenPromise = new Promise<string>((resolve, reject) => {
-                pm.post({
-                    url: this.sailpointlogin,
-                    jar: true,
-                    followAllRedirects: true,
-                    removeRefererHeader: true,
-                    form: {
-                        'IDToken1': this.IDToken1,
-                        'IDToken2': this.IDToken2
+                pm.post(
+                    {
+                        url: this.sailpointlogin,
+                        jar: true,
+                        followAllRedirects: true,
+                        removeRefererHeader: true,
+                        form: {
+                            IDToken1: this.IDToken1,
+                            IDToken2: this.IDToken2,
+                        },
+                    },
+                    function (err: any, response: any, body: any) {
+                        if (err) {
+                            reject(err)
+                        } else {
+                            const $ = cheerio.load(body)
+                            const accessToken1 = $('script#slpt-globals-json').html()
+                            resolve(JSON.parse(accessToken1 ?? '').api.accessToken)
+                        }
                     }
-                }, function(err:any, response:any, body:any) {
-                    if (err) {
-                        reject(err);
-                    } else {
-                        const $ = cheerio.load(body);
-                        const accessToken1 = $('script#slpt-globals-json').html();
-                        resolve(JSON.parse(accessToken1 ?? '').api.accessToken);
-                    }
-                });
-            });
+                )
+            })
             try {
-                this.accessToken1 = await accessTokenPromise;
-                this.expiryDate1 = new Date();
+                this.accessToken1 = await accessTokenPromise
+                this.expiryDate1 = new Date()
                 // Set expiry date to 15 minutes from now
-                this.expiryDate1.setMinutes(this.expiryDate1.getMinutes()+15)
+                this.expiryDate1.setMinutes(this.expiryDate1.getMinutes() + 15)
             } catch (err) {
-                console.error('Error obtaining access token:', err);
+                console.error('Error obtaining access token:', err)
             }
         }
-        
-        return this.accessToken1;
+
+        return this.accessToken1
     }
 
     async testConnection(): Promise<AxiosResponse> {
@@ -106,8 +107,6 @@ export class IDNClient {
 
         return axios(request)
     }
-
-
 
     async accountAggregation(): Promise<AxiosResponse> {
         const accessToken = await this.getAccessToken()
@@ -318,11 +317,8 @@ export class IDNClient {
         return await axios(request)
     }
 
-
-
     async addRole(id: string, role: string[]): Promise<AxiosResponse> {
-        
-        const Token = await this.obtainAccessToken();
+        const Token = await this.obtainAccessToken()
         const url: string = `/oathkeeper/auth-user-v3/auth-users/${id}`
         let request: AxiosRequestConfig = {
             method: 'patch',
@@ -332,14 +328,14 @@ export class IDNClient {
                 Authorization: `Bearer ${Token}`,
                 'Content-Type': 'application/json-patch+json',
             },
-            data: [{"op":"replace","path":"/capabilities","value":role}],
+            data: [{ op: 'replace', path: '/capabilities', value: role }],
         }
 
         return await axios(request)
     }
 
     async removeRole(id: string, role: string[]): Promise<AxiosResponse> {
-        const Token = await this.obtainAccessToken();
+        const Token = await this.obtainAccessToken()
         const url: string = `/oathkeeper/auth-user-v3/auth-users/${id}`
         let request: AxiosRequestConfig = {
             method: 'patch',
@@ -349,9 +345,8 @@ export class IDNClient {
                 Authorization: `Bearer ${Token}`,
                 'Content-Type': 'application/json-patch+json',
             },
-            data: [{"op":"replace","path":"/capabilities","value":role}],
+            data: [{ op: 'replace', path: '/capabilities', value: role }],
         }
-        
 
         return await axios(request)
     }
@@ -426,26 +421,26 @@ export class IDNClient {
             baseURL: this.idnUrl,
             url,
             headers: {
-                Authorization: `Bearer ${accessToken}`
+                Authorization: `Bearer ${accessToken}`,
             },
             data: null,
         }
         return await axios(request)
     }
 
-    async getCapabilties(id: string): Promise<string[] | undefined> {
-            const Token = await this.obtainAccessToken();
-            const url: string = `/oathkeeper/auth-user-v3/auth-users/${id}`
-            let request: AxiosRequestConfig = {
-                method: 'get',
-                baseURL: this.idnUrl,
-                url,
-                headers: {
-                    Authorization: `Bearer ${Token}`
-                },
-                data: null,
-            }
-            const response: AxiosResponse = await axios(request)
-            return response.data.capabilities ?? [];
+    async getCapabilities(id: string): Promise<string[] | undefined> {
+        const Token = await this.obtainAccessToken()
+        const url: string = `/oathkeeper/auth-user-v3/auth-users/${id}`
+        let request: AxiosRequestConfig = {
+            method: 'get',
+            baseURL: this.idnUrl,
+            url,
+            headers: {
+                Authorization: `Bearer ${Token}`,
+            },
+            data: null,
         }
+        const response: AxiosResponse = await axios(request)
+        return response.data.capabilities ?? []
+    }
 }
