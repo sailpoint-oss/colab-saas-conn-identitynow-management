@@ -178,7 +178,7 @@ export class IDNClient {
             },
             data: {
                 query: {
-                    query: `name.exact:${name}`,
+                    query: `attributes.uid.exact:${name}`,
                 },
                 indices: ['identities'],
                 includeNested: true,
