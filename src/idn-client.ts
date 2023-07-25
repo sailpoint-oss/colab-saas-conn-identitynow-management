@@ -1,17 +1,24 @@
-import axios, { AxiosRequestConfig, AxiosResponse } from 'axios'
+import axios, { AxiosRequestConfig, AxiosResponse, AxiosInstance } from 'axios'
+import axiosRetry from 'axios-retry'
+
+function sleep(ms: number) {
+    return new Promise((resolve) => setTimeout(resolve, ms))
+}
 
 export class IDNClient {
-    private readonly idnUrl?: string
-    private readonly patId?: string
-    private readonly patSecret?: string
-    private readonly IDToken1?: string
-    private readonly IDToken2?: string
-    private readonly sailpointlogin?: string
+    private httpClient: AxiosInstance
+    private idnUrl: string
+    private patId: string
+    private patSecret: string
+    private IDToken1: string
+    private IDToken2: string
+    private sailpointlogin: string
     private accessToken?: string
-    private accessToken1?: string
-    private expiryDate: Date
-    private expiryDate1: Date
-    private batchSize: number
+    private oathkeeperToken?: string
+    private apiExpiryDate: Date
+    private oathkeeperExpiryDate: Date
+    private batchSize = 250
+    private sleepMs = 100
 
     constructor(config: any) {
         this.idnUrl = config.idnUrl
@@ -20,17 +27,26 @@ export class IDNClient {
         this.IDToken1 = config.IDToken1
         this.IDToken2 = config.IDToken2
         this.sailpointlogin = config.sailpointlogin
-        this.expiryDate = new Date()
-        this.expiryDate1 = new Date()
-        this.batchSize = 100
+        this.apiExpiryDate = new Date()
+        this.oathkeeperExpiryDate = new Date()
+
+        this.httpClient = axios.create({
+            baseURL: this.idnUrl,
+        })
+        axiosRetry(this.httpClient, {
+            retryDelay: axiosRetry.exponentialDelay,
+            retryCondition: (error) => {
+                // Only retry if the API call recieves an error code of 429
+                return error.response!.status === 429
+            },
+        })
     }
 
-    async getAccessToken(): Promise<string | undefined> {
-        const url: string = `/oauth/token`
-        if (new Date() >= this.expiryDate) {
+    async getApiToken(): Promise<string | undefined> {
+        const url = `/oauth/token`
+        if (new Date() >= this.apiExpiryDate) {
             const request: AxiosRequestConfig = {
                 method: 'post',
-                baseURL: this.idnUrl,
                 url,
                 headers: {
                     Accept: 'application/json',
@@ -42,19 +58,20 @@ export class IDNClient {
                     grant_type: 'client_credentials',
                 },
             }
-            const response: AxiosResponse = await axios(request)
+
+            const response = await this.httpClient.request(request)
             this.accessToken = response.data.access_token
-            this.expiryDate = new Date()
-            this.expiryDate.setSeconds(this.expiryDate.getSeconds() + response.data.expires_in)
+            this.apiExpiryDate = new Date()
+            this.apiExpiryDate.setSeconds(this.apiExpiryDate.getSeconds() + response.data.expires_in)
         }
 
         return this.accessToken
     }
 
-    async obtainAccessToken(): Promise<string | undefined> {
+    async getOathkeeperToken(): Promise<string | undefined> {
         const pm = require('postman-request')
         const cheerio = require('cheerio')
-        if (new Date() >= this.expiryDate1) {
+        if (new Date() >= this.oathkeeperExpiryDate) {
             // Use a Promise to obtain the access token
             const accessTokenPromise = new Promise<string>((resolve, reject) => {
                 pm.post(
@@ -80,44 +97,42 @@ export class IDNClient {
                 )
             })
             try {
-                this.accessToken1 = await accessTokenPromise
-                this.expiryDate1 = new Date()
+                this.oathkeeperToken = await accessTokenPromise
+                this.oathkeeperExpiryDate = new Date()
                 // Set expiry date to 15 minutes from now
-                this.expiryDate1.setMinutes(this.expiryDate1.getMinutes() + 15)
+                this.oathkeeperExpiryDate.setMinutes(this.oathkeeperExpiryDate.getMinutes() + 15)
             } catch (err) {
                 console.error('Error obtaining access token:', err)
             }
         }
 
-        return this.accessToken1
+        return this.oathkeeperToken
     }
 
     async testConnection(): Promise<AxiosResponse> {
-        const accessToken = await this.getAccessToken()
-        const url: string = `/v3/public-identities-config`
+        const token = await this.getApiToken()
+        const url = `/v3/public-identities-config`
 
         let request: AxiosRequestConfig = {
             method: 'get',
-            baseURL: this.idnUrl,
             url,
             headers: {
-                Authorization: `Bearer ${accessToken}`,
+                Authorization: `Bearer ${token}`,
             },
         }
 
-        return axios(request)
+        return this.httpClient.request(request)
     }
 
-    async accountAggregation(): Promise<AxiosResponse> {
-        const accessToken = await this.getAccessToken()
-        const url: string = `/v3/search`
+    async *accountAggregation() {
+        const token = await this.getApiToken()
+        const url = `/v3/search`
 
         let request: AxiosRequestConfig = {
             method: 'post',
-            baseURL: this.idnUrl,
             url,
             headers: {
-                Authorization: `Bearer ${accessToken}`,
+                Authorization: `Bearer ${token}`,
                 'Content-Type': 'application/json',
                 Accept: 'application/json',
             },
@@ -131,95 +146,75 @@ export class IDNClient {
                 },
                 sort: ['id'],
                 indices: ['identities'],
-                includeNested: false,
-                queryResultFilter: {
-                    includes: ['name'],
-                },
+                includeNested: true,
             },
         }
 
-        let data: any[] = []
+        let pendingItems = true
+        let processed = 0
 
-        let response = await axios(request)
-        const total: number = parseInt(response.headers['x-total-count'])
-        data = [...data, ...response.data]
-
-        while (total > data.length) {
-            request.data.searchAfter = [data[data.length - 1]['id']]
-            response = await axios(request)
-            data = [...data, ...response.data]
+        while (pendingItems) {
+            let response = await this.httpClient.request(request)
+            const total = parseInt(response.headers['x-total-count'])
+            processed += response.data.length
+            pendingItems = total > processed
+            request.data.searchAfter = [response.data[response.data.length - 1]['id']]
+            yield response
+            await sleep(this.sleepMs)
         }
-        response.data = data
-        return response
     }
 
-    async getAccountDetails(id: string): Promise<AxiosResponse> {
-        const accessToken = await this.getAccessToken()
-        const encodedId = encodeURIComponent(id)
-        const url: string = `/v2/identities/${encodedId}`
-
-        let request: AxiosRequestConfig = {
-            method: 'get',
-            baseURL: this.idnUrl,
-            url,
-            headers: {
-                Authorization: `Bearer ${accessToken}`,
-            },
-            params: null,
-            data: null,
-        }
-
-        return await axios(request)
-    }
-
-    async getLCS(id: string): Promise<AxiosResponse> {
-        const accessToken = await this.getAccessToken()
-        const url: string = `/beta/identities/${id}`
-
-        let request: AxiosRequestConfig = {
-            method: 'get',
-            baseURL: this.idnUrl,
-            url,
-            headers: {
-                Authorization: `Bearer ${accessToken}`,
-            },
-            params: null,
-            data: null,
-        }
-        const response: AxiosResponse = await axios(request)
-        return await response.data.attributes.cloudLifecycleState
-    }
-
-    async getAccountDetailsByName(name: string): Promise<AxiosResponse> {
-        const accessToken = await this.getAccessToken()
-        const url: string = `/v2/search/identities`
-
-        let request: AxiosRequestConfig = {
-            method: 'get',
-            baseURL: this.idnUrl,
-            url,
-            headers: {
-                Authorization: `Bearer ${accessToken}`,
-            },
-            params: {
-                query: `name:${name}`,
-            },
-            data: null,
-        }
-
-        return await axios(request)
-    }
-
-    async roleAggregation(): Promise<AxiosResponse> {
-        const accessToken = await this.getAccessToken()
-        const url: string = `/v3/search`
+    async getAccountDetails(name: string): Promise<AxiosResponse> {
+        const token = await this.getApiToken()
+        const url = `/v3/search`
 
         let request: AxiosRequestConfig = {
             method: 'post',
-            baseURL: this.idnUrl,
             url,
             headers: {
-                Authorization: `Bearer ${accessToken}`,
+                Authorization: `Bearer ${token}`,
+                'Content-Type': 'application/json',
+                Accept: 'application/json',
+            },
+            data: {
+                query: {
+                    query: `name.exact:${name}`,
+                },
+                indices: ['identities'],
+                includeNested: true,
+            },
+        }
+
+        const response = await this.httpClient.request(request)
+        response.data = response.data.pop()
+
+        return response
+    }
+
+    async getLCS(id: string): Promise<AxiosResponse> {
+        const token = await this.getApiToken()
+        const url = `/beta/identities/${id}`
+
+        let request: AxiosRequestConfig = {
+            method: 'get',
+            url,
+            headers: {
+                Authorization: `Bearer ${token}`,
+            },
+        }
+        const response = await this.httpClient.request(request)
+        return response
+    }
+
+    async roleAggregation(): Promise<AxiosResponse> {
+        const token = await this.getApiToken()
+        const url = `/v3/search`
+
+        let request: AxiosRequestConfig = {
+            method: 'post',
+            url,
+            headers: {
+                Authorization: `Bearer ${token}`,
                 'Content-Type': 'application/json',
                 Accept: 'application/json',
             },
@@ -233,19 +228,20 @@ export class IDNClient {
             },
         }
 
-        return await axios(request)
+        const response = await this.httpClient.request(request)
+
+        return response
     }
 
-    async getRoleDetails(id: string): Promise<AxiosResponse> {
-        const accessToken = await this.getAccessToken()
-        const url: string = `/v3/search`
+    async getRole(id: string): Promise<AxiosResponse> {
+        const token = await this.getApiToken()
+        const url = `/v3/search`
 
         let request: AxiosRequestConfig = {
             method: 'post',
-            baseURL: this.idnUrl,
             url,
             headers: {
-                Authorization: `Bearer ${accessToken}`,
+                Authorization: `Bearer ${token}`,
                 'Content-Type': 'application/json',
                 Accept: 'application/json',
             },
@@ -260,107 +256,107 @@ export class IDNClient {
             },
         }
 
-        return await axios(request)
+        const response = await this.httpClient.request(request)
+        response.data = response.data.pop()
+
+        return response
     }
 
-    async workgroupAggregation(): Promise<AxiosResponse> {
-        const accessToken = await this.getAccessToken()
-        const url: string = `/v2/workgroups`
+    async *workgroupAggregation() {
+        const token = await this.getApiToken()
+        const url = `/v2/workgroups`
 
         let request: AxiosRequestConfig = {
             method: 'get',
-            baseURL: this.idnUrl,
             url,
             headers: {
-                Authorization: `Bearer ${accessToken}`,
+                Authorization: `Bearer ${token}`,
                 'Content-Type': 'application/json',
                 Accept: 'application/json',
             },
+            params: {
+                count: true,
+                offset: 0,
+                limit: this.batchSize,
+            },
         }
 
-        return await axios(request)
+        let pendingItems = true
+        let processed = 0
+
+        while (pendingItems) {
+            let response = await this.httpClient.request(request)
+            const total = parseInt(response.headers['x-total-count'])
+            processed += response.data.length
+            pendingItems = total > processed
+            request.params.offset = processed
+            yield response
+            await sleep(this.sleepMs)
+        }
+
+        return await this.httpClient.request(request)
     }
 
     async getWorkgroup(id: string): Promise<AxiosResponse> {
-        const accessToken = await this.getAccessToken()
-        const url: string = `/v2/workgroups/${id}`
+        const token = await this.getApiToken()
+        const url = `/v2/workgroups/${id}`
 
         let request: AxiosRequestConfig = {
             method: 'get',
-            baseURL: this.idnUrl,
             url,
             headers: {
-                Authorization: `Bearer ${accessToken}`,
+                Authorization: `Bearer ${token}`,
                 'Content-Type': 'application/json',
                 Accept: 'application/json',
             },
         }
 
-        return await axios(request)
+        return await this.httpClient.request(request)
     }
 
-    async getWorkgroupDetails(id: string): Promise<AxiosResponse> {
-        const accessToken = await this.getAccessToken()
-        const url: string = `/v2/workgroups/${id}/members`
+    async getWorkgroupMembership(id: string): Promise<AxiosResponse> {
+        const token = await this.getApiToken()
+        const url = `/v2/workgroups/${id}/members`
 
         let request: AxiosRequestConfig = {
             method: 'get',
-            baseURL: this.idnUrl,
             url,
             headers: {
-                Authorization: `Bearer ${accessToken}`,
+                Authorization: `Bearer ${token}`,
                 'Content-Type': 'application/json',
                 Accept: 'application/json',
             },
         }
 
-        return await axios(request)
+        return await this.httpClient.request(request)
     }
 
-    async addRole(id: string, role: string[]): Promise<AxiosResponse> {
-        const Token = await this.obtainAccessToken()
-        const url: string = `/oathkeeper/auth-user-v3/auth-users/${id}`
+    async provisionRoles(id: string, roles: string[]): Promise<AxiosResponse> {
+        const token = await this.getOathkeeperToken()
+        const url = `/oathkeeper/auth-user-v3/auth-users/${id}`
+
         let request: AxiosRequestConfig = {
             method: 'patch',
-            baseURL: this.idnUrl,
             url,
             headers: {
-                Authorization: `Bearer ${Token}`,
+                Authorization: `Bearer ${token}`,
                 'Content-Type': 'application/json-patch+json',
             },
-            data: [{ op: 'replace', path: '/capabilities', value: role }],
+            data: [{ op: 'replace', path: '/capabilities', value: roles }],
         }
 
-        return await axios(request)
-    }
-
-    async removeRole(id: string, role: string[]): Promise<AxiosResponse> {
-        const Token = await this.obtainAccessToken()
-        const url: string = `/oathkeeper/auth-user-v3/auth-users/${id}`
-        let request: AxiosRequestConfig = {
-            method: 'patch',
-            baseURL: this.idnUrl,
-            url,
-            headers: {
-                Authorization: `Bearer ${Token}`,
-                'Content-Type': 'application/json-patch+json',
-            },
-            data: [{ op: 'replace', path: '/capabilities', value: role }],
-        }
-
-        return await axios(request)
+        return await this.httpClient.request(request)
     }
 
     async addWorkgroup(id: string, workgroup: string): Promise<AxiosResponse> {
-        const accessToken = await this.getAccessToken()
-        const url: string = `/v2/workgroups/${workgroup}/members`
+        const token = await this.getApiToken()
+        const url = `/v2/workgroups/${workgroup}/members`
 
         let request: AxiosRequestConfig = {
             method: 'post',
-            baseURL: this.idnUrl,
             url,
             headers: {
-                Authorization: `Bearer ${accessToken}`,
+                Authorization: `Bearer ${token}`,
                 'Content-Type': 'application/json',
                 Accept: 'application/json',
             },
@@ -370,19 +366,18 @@ export class IDNClient {
             },
         }
 
-        return await axios(request)
+        return await this.httpClient.request(request)
     }
 
     async removeWorkgroup(id: string, workgroup: string): Promise<AxiosResponse> {
-        const accessToken = await this.getAccessToken()
-        const url: string = `/v2/workgroups/${workgroup}/members`
+        const token = await this.getApiToken()
+        const url = `/v2/workgroups/${workgroup}/members`
 
         let request: AxiosRequestConfig = {
             method: 'post',
-            baseURL: this.idnUrl,
             url,
             headers: {
-                Authorization: `Bearer ${accessToken}`,
+                Authorization: `Bearer ${token}`,
                 'Content-Type': 'application/json',
                 Accept: 'application/json',
             },
@@ -392,55 +387,50 @@ export class IDNClient {
             },
         }
 
-        return await axios(request)
+        return await this.httpClient.request(request)
     }
 
     async enableAccount(id: string): Promise<AxiosResponse> {
-        const accessToken = await this.getAccessToken()
-        const url: string = `/beta/identities-accounts/${id}/enable`
+        const token = await this.getApiToken()
+        const url = `/beta/identities-accounts/${id}/enable`
 
         let request: AxiosRequestConfig = {
             method: 'post',
-            baseURL: this.idnUrl,
             url,
             headers: {
-                Authorization: `Bearer ${accessToken}`,
+                Authorization: `Bearer ${token}`,
             },
-            data: null,
         }
 
-        return await axios(request)
+        return await this.httpClient.request(request)
     }
 
     async disableAccount(id: string): Promise<AxiosResponse> {
-        const accessToken = await this.getAccessToken()
-        const url: string = `/beta/identities-accounts/${id}/disable`
+        const token = await this.getApiToken()
+        const url = `/beta/identities-accounts/${id}/disable`
 
         let request: AxiosRequestConfig = {
             method: 'post',
-            baseURL: this.idnUrl,
             url,
             headers: {
-                Authorization: `Bearer ${accessToken}`,
+                Authorization: `Bearer ${token}`,
             },
-            data: null,
         }
-        return await axios(request)
+        return await this.httpClient.request(request)
     }
 
-    async getCapabilities(id: string): Promise<string[] | undefined> {
-        const Token = await this.obtainAccessToken()
-        const url: string = `/oathkeeper/auth-user-v3/auth-users/${id}`
+    async getCapabilities(id: string): Promise<AxiosResponse> {
+        const token = await this.getOathkeeperToken()
+        const url = `/oathkeeper/auth-user-v3/auth-users/${id}`
+
         let request: AxiosRequestConfig = {
             method: 'get',
-            baseURL: this.idnUrl,
             url,
             headers: {
-                Authorization: `Bearer ${Token}`,
+                Authorization: `Bearer ${token}`,
             },
-            data: null,
         }
-        const response: AxiosResponse = await axios(request)
-        return response.data.capabilities ?? []
+        const response = await this.httpClient.request(request)
+        return response
     }
 }

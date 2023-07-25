@@ -35,99 +35,146 @@ export const connector = async () => {
     // Use the vendor SDK, or implement own client as necessary, to initialize a client
     const client = new IDNClient(config)
 
-    const SLEEP: number = 2000
     const workgroupRegex = /.+-.+-.+-.+-.+/
-    const EXCLUDED_ROLES = ['AUDITOR', 'DASHBOARD']
+    // const EXCLUDED_ROLES = ['AUDITOR', 'DASHBOARD']
 
-    function sleep(ms: number) {
-        return new Promise((resolve) => setTimeout(resolve, ms))
+    const getRoles = () => {
+        return [
+            { name: 'Helpdesk', value: 'HELPDESK', description: 'Helpdesk access to IdentityNow' },
+            { name: 'Administrator', value: 'ORG_ADMIN', description: 'Full administrative access to IdentityNow' },
+            {
+                name: 'Cert Administrator',
+                value: 'CERT_ADMIN',
+                description: 'Cert Administrator access to IdentityNow',
+            },
+            {
+                name: 'Report Administrator',
+                value: 'REPORT_ADMIN',
+                description: 'Report Administrator access to IdentityNow',
+            },
+            {
+                name: 'Role Administrator',
+                value: 'ROLE_ADMIN',
+                description: 'Role Administrator access to IdentityNow',
+            },
+            {
+                name: 'Role SubAdministrator',
+                value: 'ROLE_SUBADMIN',
+                description: 'Role SubAdministrator access to IdentityNow',
+            },
+            {
+                name: 'Source Administrator',
+                value: 'SOURCE_ADMIN',
+                description: 'Source Administrator access to IdentityNow',
+            },
+            {
+                name: 'Source Subadministrator',
+                value: 'SOURCE_SUBADMIN',
+                description: 'Source Subadministrator access to IdentityNow',
+            },
+            {
+                name: 'Cloud Gov Admin',
+                value: 'CLOUD_GOV_ADMIN',
+                description: 'Cloud Gov Admin access to IdentityNow',
+            },
+            {
+                name: 'Cloud Gov User',
+                value: 'CLOUD_GOV_USER',
+                description: 'Cloud Gov User access to IdentityNow',
+            },
+            {
+                name: 'Access Intelligence Center - Reader',
+                value: 'sp:aic-dashboard-read',
+                description: 'Access Intelligence Center - Reader access to IdentityNow',
+            },
+            {
+                name: 'Access Intelligence Center - Author',
+                value: 'sp:aic-dashboard-write',
+                description: 'Access Intelligence Center - Author access to IdentityNow',
+            },
+            {
+                name: 'Access Intelligence Center - Admin',
+                value: 'sp:aic-dashboard-admin',
+                description: 'Access Intelligence Center - Admin access to IdentityNow',
+            },
+        ]
     }
 
     const getWorkgroups = async (): Promise<any> => {
         const workgroups: any[] = []
         if (includeWorkgroups) {
-            const response1 = await client.workgroupAggregation()
-            for (const workgroup of response1.data) {
-                const response2 = await client.getWorkgroupDetails(workgroup.id)
-                workgroup.members = response2.data
-                workgroups.push(workgroup)
+            for await (const response1 of client.workgroupAggregation()) {
+                for (const workgroup of response1.data) {
+                    const response2 = await client.getWorkgroupMembership(workgroup.id)
+                    workgroup.members = response2.data
+                    workgroups.push(workgroup)
+                }
             }
         }
         return workgroups
     }
 
-    const buildAccount = async (id: string, workgroups: any[]): Promise<Account> => {
-        const response: AxiosResponse = await client.getAccountDetails(id)
-        const account: Account = new Account(response.data)
+    const buildAccount = async (rawAccount: any, workgroups: any[]): Promise<Account> => {
+        const account: Account = new Account(rawAccount)
         const assignedWorkgroups =
-            workgroups.filter((w) =>
-                w.members.find((a: { externalId: number }) => a.externalId == account.attributes.externalId)
-            ) || []
-        const roles: string[] = (await client.getCapabilities(account.attributes.externalId as string)) || []
-        account.attributes.groups = [...roles, ...assignedWorkgroups.map((w) => w.id)]
+            workgroups
+                .filter((w) => w.members.find((a: { externalId: number }) => a.externalId == account.attributes.id))
+                .map((w) => w.id) || []
+        const idnAccount = rawAccount.accounts.find(
+            (a: { source: { name: string } }) => a.source.name === 'IdentityNow'
+        )
+        const assignedRoles = [].concat(idnAccount.entitlementAttributes.assignedGroups)
+        account.attributes.groups = [...assignedRoles, ...assignedWorkgroups]
 
         return account
     }
 
-    const provisionEntitlement = async (action: AttributeChangeOp, account: Account, entitlement: string) => {
-        logger.info(`Governance Group| Executing ${action} operation for ${account.uuid}/${entitlement}`)
+    const provisionWorkgroup = async (action: AttributeChangeOp, id: string, entitlement: string) => {
+        logger.info(`Governance Group| Executing ${action} operation for ${id}/${entitlement}`)
 
         if (action === AttributeChangeOp.Add) {
-            await client.addWorkgroup(account.attributes.externalId as string, entitlement)
+            await client.addWorkgroup(id, entitlement)
         } else if (action === AttributeChangeOp.Remove) {
-            await client.removeWorkgroup(account.attributes.externalId as string, entitlement)
+            await client.removeWorkgroup(id, entitlement)
         }
     }
 
-    const provisionPermission = async (action: AttributeChangeOp, account: Account, entitlements: string[]) => {
-        logger.info(`Roles| Executing ${action} operation for ${account.uuid}/${entitlements}`)
+    const provisionRoles = async (action: AttributeChangeOp, id: string, roles: string[]) => {
+        logger.info(`Roles| Executing ${action} operation for ${id}/${roles}`)
+        const response = await client.getCapabilities(id)
+        const capabilities: string[] = response.data.capabilities || []
+        let resultingRoles: string[] = []
         if (action === AttributeChangeOp.Add) {
-            const capabilities: string[] = (await client.getCapabilities(account.attributes.externalId as string)) || []
-            for (const capability of entitlements) {
-                capabilities.push(capability)
-            }
-            await client.addRole(account.attributes.externalId as string, capabilities)
+            resultingRoles = [...roles, ...capabilities]
         } else if (action === AttributeChangeOp.Remove) {
-            const capabilities: string[] = (await client.getCapabilities(account.attributes.externalId as string)) || []
-            let updatedCapabilities: string[] = capabilities
-            for (const capability of entitlements) {
-                updatedCapabilities = updatedCapabilities.filter((cap) => cap !== capability)
-            }
-            await client.removeRole(account.attributes.externalId as string, updatedCapabilities)
+            resultingRoles = capabilities.filter((x) => !roles.includes(x))
         }
+        await client.provisionRoles(id, resultingRoles)
     }
 
-    const removeAll = async (account: Account, groups: any) => {
-        const rolesToRemove: string[] = []
-        if (groups) {
-            let roles: string[] = []
-            if (Array.isArray(groups)) {
-                roles = groups
-            } else {
-                roles.push(groups)
-            }
-            console.log(roles)
-            for (const group of roles) {
+    const provisionEntitlements = async (action: AttributeChangeOp, id: string, groups: string[]) => {
+        const roles: string[] = []
+        for (const group of groups) {
+            if (group) {
                 if (workgroupRegex.test(group)) {
-                    await provisionEntitlement(AttributeChangeOp.Remove, account, group)
+                    await provisionWorkgroup(action, id, group)
                 } else {
-                    rolesToRemove.push(group)
+                    roles.push(group)
                 }
             }
-            if (rolesToRemove) {
-                await provisionPermission(AttributeChangeOp.Remove, account, rolesToRemove)
-            }
         }
+        await provisionRoles(action, id, roles)
     }
 
-    const getLifecycle = async (id: any) => {
-        return await client.getLCS(id)
+    const getLCS = async (id: string) => {
+        const response = await client.getLCS(id)
+        return response.data.attributes.cloudLifecycleState
     }
 
     return createConnector()
         .stdTestConnection(async (context: Context, input: undefined, res: Response<StdTestConnectionOutput>) => {
             const response: AxiosResponse = await client.testConnection()
-            const response1 = await client.obtainAccessToken()
+            const response1 = await client.getOathkeeperToken()
             if (response.status != 200 || typeof response1 !== 'string') {
                 throw new ConnectorError('Unable to connect to IdentityNow! Please check your Username and Password')
             } else {
@@ -136,42 +183,61 @@ export const connector = async () => {
             }
         })
         .stdAccountList(async (context: Context, input: StdAccountListInput, res: Response<StdAccountListOutput>) => {
-            const response: AxiosResponse = await client.accountAggregation()
             const workgroups: any[] = await getWorkgroups()
-            const accounts = new Set<string>(response.data.map((a: { name: string }) => a.name))
-            workgroups.forEach((w) => w.members.forEach((x: { alias: string }) => accounts.add(x.alias)))
-            for (const id of Array.from(accounts)) {
-                const account: Account = await buildAccount(id, workgroups)
+            const workgroupMembers = new Set<string>()
+            let rawAccounts: any[] = []
+            for await (const response of client.accountAggregation()) {
+                rawAccounts = rawAccounts.concat(response.data)
+            }
+            workgroups.forEach((w) => w.members.forEach((x: { alias: string }) => workgroupMembers.add(x.alias)))
+            for (const member of workgroupMembers) {
+                if (!rawAccounts.find((x) => x.name === member)) {
+                    const response = await client.getAccountDetails(member)
+                    rawAccounts.push(response.data)
+                }
+            }
 
-                logger.info(account)
-                res.send(account)
+            for (const rawAccount of rawAccounts) {
+                buildAccount(rawAccount, workgroups)
+                    .then((account) => {
+                        logger.info(account)
+                        res.send(account)
+                    })
+                    .catch(logger.error)
             }
         })
         .stdAccountRead(async (context: Context, input: StdAccountReadInput, res: Response<StdAccountReadOutput>) => {
             logger.info(input)
             const workgroups: any[] = await getWorkgroups()
-            const account: Account = await buildAccount(input.identity, workgroups)
+            const response = await client.getAccountDetails(input.identity)
+            const account: Account = await buildAccount(response.data, workgroups)
 
             logger.info(account)
             res.send(account)
         })
         .stdEntitlementList(async (context: Context, input: any, res: Response<StdEntitlementListOutput>) => {
-            const response1: AxiosResponse = await client.roleAggregation()
-            for (const r of response1.data) {
-                if (!EXCLUDED_ROLES.includes(r.value)) {
-                    const role: Role = new Role(r)
+            // const response = await client.roleAggregation()
+            // for (const r of response.data) {
+            //     const role: Role = new Role(r)
 
-                    logger.info(role)
-                    res.send(role)
-                }
+            //     logger.info(role)
+            //     res.send(role)
+            // }
+            for (const r of getRoles()) {
+                const role: Role = new Role(r)
+
+                logger.info(role)
+                res.send(role)
             }
-            if (includeWorkgroups) {
-                const response2: AxiosResponse = await client.workgroupAggregation()
-                for (const w of response2.data) {
-                    const workgroup: Workgroup = new Workgroup(w)
 
-                    logger.info(workgroup)
-                    res.send(workgroup)
+            if (includeWorkgroups) {
+                for await (const response of client.workgroupAggregation()) {
+                    for (const w of response.data) {
+                        const workgroup: Workgroup = new Workgroup(w)
+
+                        logger.info(workgroup)
+                        res.send(workgroup)
+                    }
                 }
             }
         })
@@ -186,8 +252,8 @@ export const connector = async () => {
                     logger.info(workgroup)
                     res.send(workgroup)
                 } else {
-                    const response: AxiosResponse = await client.getRoleDetails(input.identity)
-                    const role: Role = new Role(response.data.pop())
+                    const response: AxiosResponse = await client.getRole(input.identity)
+                    const role: Role = new Role(response.data)
 
                     logger.info(role)
                     res.send(role)
@@ -197,23 +263,13 @@ export const connector = async () => {
         .stdAccountCreate(
             async (context: Context, input: StdAccountCreateInput, res: Response<StdAccountCreateOutput>) => {
                 logger.info(input)
-                const response1 = await client.getAccountDetailsByName(input.attributes.name as string)
-                const rawAccount = response1.data.pop()
-                const response2 = await client.getAccountDetails(rawAccount.name)
-                let account: Account = new Account(response2.data)
-                if (input.attributes.groups != null) {
-                    let values: string[] = [].concat(input.attributes.groups)
-                    let roles: string[] = values
-                    for (const value of values) {
-                        if (workgroupRegex.test(value)) {
-                            await provisionEntitlement(AttributeChangeOp.Add, account, value)
-                            roles = roles.filter((cap) => cap !== value)
-                        }
-                    }
-                    await provisionPermission(AttributeChangeOp.Add, account, roles)
-                }
-                const workgroups: any[] = await getWorkgroups()
-                account = await buildAccount(rawAccount.name as string, workgroups)
+                const response = await client.getAccountDetails(input.identity as string)
+                const rawAccount = response.data
+                const groups = [].concat(input.attributes.groups)
+                await provisionEntitlements(AttributeChangeOp.Add, rawAccount.id, groups)
+
+                const workgroups = await getWorkgroups()
+                const account = await buildAccount(rawAccount, workgroups)
 
                 logger.info(account)
                 res.send(account)
@@ -223,25 +279,18 @@ export const connector = async () => {
             async (context: Context, input: StdAccountUpdateInput, res: Response<StdAccountUpdateOutput>) => {
                 logger.info(input)
                 const response = await client.getAccountDetails(input.identity)
-                let account: Account = new Account(response.data)
+                const rawAccount = response.data
                 for (const change of input.changes) {
-                    const values: string[] = [].concat(change.value)
-                    let roles: string[] = values
+                    const groups: string[] = [].concat(change.value)
                     if (change.op === AttributeChangeOp.Set) {
                         throw new ConnectorError(`Operation not supported: ${change.op}`)
                     } else {
-                        for (const value of values) {
-                            if (workgroupRegex.test(value)) {
-                                await provisionEntitlement(change.op, account, value)
-                                roles = roles.filter((cap) => cap !== value)
-                            }
-                        }
-                        await provisionPermission(change.op, account, roles)
+                        provisionEntitlements(change.op, rawAccount.id, groups)
                     }
                 }
 
-                const workgroups: any[] = await getWorkgroups()
-                account = await buildAccount(input.identity, workgroups)
+                const workgroups = await getWorkgroups()
+                const account = await buildAccount(rawAccount, workgroups)
 
                 logger.info(account)
                 res.send(account)
@@ -249,32 +298,36 @@ export const connector = async () => {
         )
         .stdAccountDisable(async (context: Context, input: any, res: Response<any>) => {
             logger.info(input)
-            const workgroups: any[] = await getWorkgroups()
-            const account: Account = await buildAccount(input.identity, workgroups)
-            const groups = (account.attributes.groups as string) || []
-            if (removeGroups && Array.isArray(groups) && groups.length > 0) {
-                const LCS: any = await getLifecycle(account.attributes.externalId)
-                if (typeof LCS === 'string' && LCS.toLowerCase() === 'inactive') {
-                    removeAll(account, groups)
-                    account.attributes.groups = []
+            const workgroups = await getWorkgroups()
+            const response = await client.getAccountDetails(input.identity)
+            const rawAccount = response.data
+            const account = await buildAccount(response.data, workgroups)
+            const groups = (account.attributes.groups as string[]) || []
+            if (removeGroups && groups.length > 0) {
+                const LCS = await getLCS(rawAccount.id)
+                if (LCS.toLowerCase() === 'inactive') {
+                    provisionEntitlements(AttributeChangeOp.Remove, rawAccount.id, groups)
                 }
             }
-            account.attributes.enabled = false
+            account.attributes.groups = []
+            account.disabled = true
+
+            await client.disableAccount(account.attributes.id as string)
             logger.info(account)
             res.send(account)
-            await sleep(SLEEP)
-            await client.disableAccount(account.attributes.externalId as string)
         })
 
         .stdAccountEnable(async (context: Context, input: any, res: Response<any>) => {
             logger.info(input)
-            const workgroups: any[] = await getWorkgroups()
-            const account: Account = await buildAccount(input.identity, workgroups)
+            const workgroups = await getWorkgroups()
+            const response = await client.getAccountDetails(input.identity)
+            const rawAccount = response.data
+            const account = await buildAccount(rawAccount, workgroups)
 
-            account.attributes.enabled = true
+            account.disabled = false
+
+            await client.enableAccount(account.attributes.id as string)
             logger.info(account)
             res.send(account)
-            await sleep(SLEEP)
-            await client.enableAccount(account.attributes.externalId as string)
         })
 }

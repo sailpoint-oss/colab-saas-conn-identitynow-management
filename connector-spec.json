@@ -31,8 +31,8 @@
                             "key": "sailpointlogin",
                             "label": "SailPoint Login URL",
                             "placeholder": "https://*.login.sailpoint.com/auth",
-                            "type": "text",
-                            "required": true  
+                            "type": "url",
+                            "required": true
                         },
                         {
                             "key": "patId",
@@ -80,20 +80,15 @@
                     ]
                 }
             ]
-        }   
+        }
     ],
     "accountSchema": {
         "displayAttribute": "name",
-        "identityAttribute": "id",
+        "identityAttribute": "name",
         "groupAttribute": "groups",
         "attributes": [
             {
                 "name": "id",
-                "type": "string",
-                "description": ""
-            },
-            {
-                "name": "externalId",
                 "type": "string",
                 "description": ""
             },
@@ -115,11 +110,6 @@
             {
                 "name": "displayName",
                 "type": "string",
-                "description": ""
-            },
-            {
-                "name": "enabled",
-                "type": "boolean",
                 "description": ""
             },
             {

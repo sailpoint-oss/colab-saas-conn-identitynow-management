@@ -19,3 +19,4 @@ dist/
 coverage/
 
 package-lock.json
+*.local.http

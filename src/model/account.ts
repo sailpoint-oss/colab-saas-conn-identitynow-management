@@ -7,23 +7,15 @@ export class Account {
     disabled: boolean
 
     constructor(object: any) {
-        var enablecheck = true
-        if(object.status  == "DISABLED")
-        {
-            enablecheck = false
-        }
         this.attributes = {
             id: object.id,
-            externalId: object.externalId,
-            name: object.uid,
+            name: object.name,
             firstName: object.attributes.firstname,
             lastName: object.attributes.lastname,
-            displayName: object.name,
-            enabled: enablecheck,
-            groups: object.role,
+            displayName: object.attributes.displayName,
         }
-        this.disabled = !this.attributes.enabled
-        this.identity = this.attributes.id as string
+        this.disabled = object.inactive
+        this.identity = this.attributes.name as string
         this.uuid = this.attributes.name as string
     }
 }
