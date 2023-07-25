@@ -123,7 +123,9 @@ export const connector = async () => {
         const idnAccount = rawAccount.accounts.find(
             (a: { source: { name: string } }) => a.source.name === 'IdentityNow'
         )
-        const assignedRoles = [].concat(idnAccount.entitlementAttributes.assignedGroups)
+        const assignedRoles = idnAccount.entitlementAttributes.assignedGroups
+            ? [].concat(idnAccount.entitlementAttributes.assignedGroups)
+            : []
         account.attributes.groups = [...assignedRoles, ...assignedWorkgroups]
 
         return account
