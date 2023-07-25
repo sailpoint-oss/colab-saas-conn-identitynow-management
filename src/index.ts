@@ -263,12 +263,14 @@ export const connector = async () => {
         .stdAccountCreate(
             async (context: Context, input: StdAccountCreateInput, res: Response<StdAccountCreateOutput>) => {
                 logger.info(input)
-                const response = await client.getAccountDetails(input.identity as string)
-                const rawAccount = response.data
+                const response1 = await client.getAccountDetails(input.identity as string)
+                let rawAccount = response1.data
                 const groups = [].concat(input.attributes.groups)
                 await provisionEntitlements(AttributeChangeOp.Add, rawAccount.id, groups)
 
                 const workgroups = await getWorkgroups()
+                const response2 = await client.getAccountDetails(input.identity as string)
+                rawAccount = response2.data
                 const account = await buildAccount(rawAccount, workgroups)
 
                 logger.info(account)
@@ -278,8 +280,8 @@ export const connector = async () => {
         .stdAccountUpdate(
             async (context: Context, input: StdAccountUpdateInput, res: Response<StdAccountUpdateOutput>) => {
                 logger.info(input)
-                const response = await client.getAccountDetails(input.identity)
-                const rawAccount = response.data
+                const response1 = await client.getAccountDetails(input.identity)
+                let rawAccount = response1.data
                 for (const change of input.changes) {
                     const groups: string[] = [].concat(change.value)
                     if (change.op === AttributeChangeOp.Set) {
@@ -290,6 +292,8 @@ export const connector = async () => {
                 }
 
                 const workgroups = await getWorkgroups()
+                const response2 = await client.getAccountDetails(input.identity)
+                rawAccount = response2.data
                 const account = await buildAccount(rawAccount, workgroups)
 
                 logger.info(account)
