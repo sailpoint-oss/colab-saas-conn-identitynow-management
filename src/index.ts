@@ -313,9 +313,9 @@ export const connector = async () => {
                 const LCS = await getLCS(rawAccount.id)
                 if (LCS.toLowerCase() === 'inactive') {
                     provisionEntitlements(AttributeChangeOp.Remove, rawAccount.id, groups)
+                    account.attributes.groups = []
                 }
             }
-            account.attributes.groups = []
             account.disabled = true
 
             await client.disableAccount(account.attributes.id as string)
