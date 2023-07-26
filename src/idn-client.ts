@@ -50,7 +50,6 @@ export class IDNClient {
                 url,
                 headers: {
                     Accept: 'application/json',
-                    'Content-Type': 'application/json',
                 },
                 params: {
                     client_id: this.patId,

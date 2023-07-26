@@ -175,9 +175,9 @@ export const connector = async () => {
 
     return createConnector()
         .stdTestConnection(async (context: Context, input: undefined, res: Response<StdTestConnectionOutput>) => {
-            const response: AxiosResponse = await client.testConnection()
-            const response1 = await client.getOathkeeperToken()
-            if (response.status != 200 || typeof response1 !== 'string') {
+            const response1: AxiosResponse = await client.testConnection()
+            const response2 = await client.getOathkeeperToken()
+            if (response1.status != 200 || typeof response2 !== 'string') {
                 throw new ConnectorError('Unable to connect to IdentityNow! Please check your Username and Password')
             } else {
                 logger.info('Test successful!')
@@ -284,13 +284,19 @@ export const connector = async () => {
                 logger.info(input)
                 const response1 = await client.getAccountDetails(input.identity)
                 let rawAccount = response1.data
-                for (const change of input.changes) {
-                    const groups: string[] = [].concat(change.value)
-                    if (change.op === AttributeChangeOp.Set) {
-                        throw new ConnectorError(`Operation not supported: ${change.op}`)
-                    } else {
-                        provisionEntitlements(change.op, rawAccount.id, groups)
+                if (input.changes) {
+                    for (const change of input.changes) {
+                        const groups: string[] = [].concat(change.value)
+                        if (change.op === AttributeChangeOp.Set) {
+                            throw new ConnectorError(`Operation not supported: ${change.op}`)
+                        } else {
+                            await provisionEntitlements(change.op, rawAccount.id, groups)
+                        }
                     }
+                    //Need to investigate about std:account:update operations without changes but adding this for the moment
+                } else if ('attributes' in input) {
+                    const groups = (input as any).attributes.groups || []
+                    await provisionEntitlements(AttributeChangeOp.Add, rawAccount.id, groups)
                 }
 
                 const workgroups = await getWorkgroups()
