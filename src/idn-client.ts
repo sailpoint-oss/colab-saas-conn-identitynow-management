@@ -165,27 +165,19 @@ export class IDNClient {
 
     async getAccountDetails(name: string): Promise<AxiosResponse> {
         const token = await this.getApiToken()
-        const url = `/v3/search`
+        const url = `/v2/identities/${name}`
 
         let request: AxiosRequestConfig = {
-            method: 'post',
+            method: 'get',
             url,
             headers: {
                 Authorization: `Bearer ${token}`,
                 'Content-Type': 'application/json',
                 Accept: 'application/json',
             },
-            data: {
-                query: {
-                    query: `attributes.uid.exact:${name}`,
-                },
-                indices: ['identities'],
-                includeNested: true,
-            },
         }
 
         const response = await this.httpClient.request(request)
-        response.data = response.data.pop()
 
         return response
     }
