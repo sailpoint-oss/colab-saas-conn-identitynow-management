@@ -8,13 +8,13 @@ export class Account {
 
     constructor(object: any) {
         this.attributes = {
-            id: object.externalId,
-            name: object.alias,
-            firstName: object.attributes.firstname,
-            lastName: object.attributes.lastname,
-            displayName: object.attributes.displayName,
+            id: object.externalId || object.id,
+            name: object.alias || object.name,
+            firstName: object.attributes.firstname || object.firstName,
+            lastName: object.attributes.lastname || object.lastName,
+            displayName: object.attributes.displayName || object.displayName,
         }
-        this.disabled = !object.enabled
+        this.disabled = object.enabled !== undefined ? !object.enabled : object.inactive
         this.identity = this.attributes.name as string
         this.uuid = this.attributes.name as string
     }

@@ -42,6 +42,18 @@ export const connector = async () => {
     const workgroupRegex = /.+-.+-.+-.+-.+/
     // const EXCLUDED_ROLES = ['AUDITOR', 'DASHBOARD']
 
+    const safeList = (object: any) => {
+        let safeList: any[]
+        if (typeof object === 'string') {
+            safeList = [object]
+        } else if (object === undefined) {
+            safeList = []
+        } else {
+            safeList = object
+        }
+        return safeList
+    }
+
     const getRoles = () => {
         return [
             { name: 'Helpdesk', value: 'HELPDESK', description: 'Helpdesk access to IdentityNow' },
@@ -118,13 +130,26 @@ export const connector = async () => {
         return workgroups
     }
 
+    const getAssignedRoles = (rawAccount: any): string[] => {
+        let roles: string[]
+        if (rawAccount.role !== undefined) {
+            roles = safeList(rawAccount.role)
+        } else {
+            const idnAccount = rawAccount.accounts.find(
+                (x: { source: { type: string } }) => x.source.type === 'IdentityNowConnector'
+            )
+            roles = safeList(idnAccount.entitlementAttributes.assignedGroups)
+        }
+        return roles
+    }
+
     const buildAccount = async (rawAccount: any, workgroups: any[]): Promise<Account> => {
         const account: Account = new Account(rawAccount)
         const assignedWorkgroups =
             workgroups
                 .filter((w) => w.members.find((a: { externalId: number }) => a.externalId == account.attributes.id))
                 .map((w) => w.id) || []
-        const assignedRoles = rawAccount.role || []
+        const assignedRoles = getAssignedRoles(rawAccount)
         account.attributes.groups = [...assignedRoles, ...assignedWorkgroups]
 
         return account
