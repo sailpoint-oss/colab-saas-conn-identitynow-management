@@ -165,7 +165,7 @@ export class IDNClient {
 
     async getAccountDetails(name: string): Promise<AxiosResponse> {
         const token = await this.getApiToken()
-        const url = `/v2/identities/${name}`
+        const url = `/v2/search/identities`
 
         let request: AxiosRequestConfig = {
             method: 'get',
@@ -175,9 +175,13 @@ export class IDNClient {
                 'Content-Type': 'application/json',
                 Accept: 'application/json',
             },
+            params: {
+                query: `attributes.uid:"${name}"`,
+            },
         }
 
         const response = await this.httpClient.request(request)
+        response.data = response.data.pop()
 
         return response
     }

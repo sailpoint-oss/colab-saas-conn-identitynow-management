@@ -113,6 +113,12 @@ export const connector = async () => {
                 value: 'sp:aic-dashboard-admin',
                 description: 'Access Intelligence Center - Admin access to IdentityNow',
             },
+            {
+                name: 'User',
+                value: 'user',
+                description:
+                    'User access to IdentityNow. No special permission, it just enables the identity to be managed in a JML flow',
+            },
         ]
     }
 
@@ -150,7 +156,7 @@ export const connector = async () => {
                 .filter((w) => w.members.find((a: { externalId: number }) => a.externalId == account.attributes.id))
                 .map((w) => w.id) || []
         const assignedRoles = getAssignedRoles(rawAccount)
-        account.attributes.groups = [...assignedRoles, ...assignedWorkgroups]
+        account.attributes.groups = [...assignedRoles, ...assignedWorkgroups, 'user']
 
         return account
     }
@@ -184,7 +190,7 @@ export const connector = async () => {
             if (group) {
                 if (workgroupRegex.test(group)) {
                     await provisionWorkgroup(action, id, group)
-                } else {
+                } else if (group !== 'user') {
                     roles.push(group)
                 }
             }
@@ -292,7 +298,7 @@ export const connector = async () => {
                 const response1 = await client.getAccountDetails(input.identity as string)
                 let rawAccount = response1.data
                 const groups = [].concat(input.attributes.groups)
-                await provisionEntitlements(AttributeChangeOp.Add, rawAccount.externalId, groups)
+                await provisionEntitlements(AttributeChangeOp.Add, rawAccount.id, groups)
 
                 const workgroups = await getWorkgroups()
                 const response2 = await client.getAccountDetails(input.identity as string)
@@ -314,13 +320,13 @@ export const connector = async () => {
                         if (change.op === AttributeChangeOp.Set) {
                             throw new ConnectorError(`Operation not supported: ${change.op}`)
                         } else {
-                            await provisionEntitlements(change.op, rawAccount.externalId, groups)
+                            await provisionEntitlements(change.op, rawAccount.id, groups)
                         }
                     }
                     //Need to investigate about std:account:update operations without changes but adding this for the moment
                 } else if ('attributes' in input) {
                     const groups = (input as any).attributes.groups || []
-                    await provisionEntitlements(AttributeChangeOp.Add, rawAccount.externalId, groups)
+                    await provisionEntitlements(AttributeChangeOp.Add, rawAccount.id, groups)
                 }
 
                 const workgroups = await getWorkgroups()
@@ -340,9 +346,9 @@ export const connector = async () => {
             const account = await buildAccount(response.data, workgroups)
             const groups = (account.attributes.groups as string[]) || []
             if (removeGroups && groups.length > 0) {
-                const LCS = await getLCS(rawAccount.externalId)
+                const LCS = await getLCS(rawAccount.id)
                 if (LCS.toLowerCase() === 'inactive') {
-                    await provisionEntitlements(AttributeChangeOp.Remove, rawAccount.externalId, groups)
+                    await provisionEntitlements(AttributeChangeOp.Remove, rawAccount.id, groups)
                     account.attributes.groups = []
                 }
             }
