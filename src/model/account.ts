@@ -8,8 +8,8 @@ export class Account {
 
     constructor(object: any) {
         this.attributes = {
-            id: object.externalId || object.id,
-            name: object.alias || object.name,
+            id: object.id,
+            name: object.attributes.uid || object.name,
             firstName: object.attributes.firstname || object.firstName,
             lastName: object.attributes.lastname || object.lastName,
             displayName: object.attributes.displayName || object.displayName,
