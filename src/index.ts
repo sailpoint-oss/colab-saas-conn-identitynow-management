@@ -354,6 +354,7 @@ export const connector = async () => {
             }
             account.disabled = true
 
+            //await sleep(5000)
             await client.disableAccount(account.attributes.id as string)
             logger.info(account)
             res.send(account)

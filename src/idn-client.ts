@@ -34,10 +34,11 @@ export class IDNClient {
             baseURL: this.idnUrl,
         })
         axiosRetry(this.httpClient, {
+            retries: 5,
             retryDelay: axiosRetry.exponentialDelay,
             retryCondition: (error) => {
-                // Only retry if the API call recieves an error code of 429
-                return error.response!.status === 429
+                // Only retry if the API call recieves an error code of 429 or 400
+                return error.response!.status === 429 || error.response!.status === 400
             },
         })
     }
@@ -176,7 +177,7 @@ export class IDNClient {
                 Accept: 'application/json',
             },
             params: {
-                query: `attributes.uid:"${name}"`,
+                query: `attributes.uid:${name}`,
             },
         }
 
