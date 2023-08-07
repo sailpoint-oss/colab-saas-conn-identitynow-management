@@ -114,6 +114,26 @@ export const connector = async () => {
                 description: 'Access Intelligence Center - Admin access to IdentityNow',
             },
             {
+                name: 'Cloud Governance - Admin',
+                value: 'CLOUD_GOV_ADMIN',
+                description: 'Admin access to Cloud Governance',
+            },
+            {
+                name: 'Cloud Governance - User',
+                value: 'CLOUD_GOV_USER',
+                description: 'User access to Cloud Governance',
+            },
+            {
+                name: 'SaaS Management - Admin',
+                value: 'SAAS_MANAGEMENT_ADMIN',
+                description: 'Admin access to SaaS Management',
+            },
+            {
+                name: 'SaaS Management - Reader',
+                value: 'SAAS_MANAGEMENT_READER',
+                description: 'Reader access to SaaS Management',
+            },
+            {
                 name: 'User',
                 value: 'user',
                 description:
@@ -248,13 +268,6 @@ export const connector = async () => {
             res.send(account)
         })
         .stdEntitlementList(async (context: Context, input: any, res: Response<StdEntitlementListOutput>) => {
-            // const response = await client.roleAggregation()
-            // for (const r of response.data) {
-            //     const role: Role = new Role(r)
-
-            //     logger.info(role)
-            //     res.send(role)
-            // }
             for (const r of getRoles()) {
                 const role: Role = new Role(r)
 
