@@ -75,14 +75,14 @@ export const connector = async () => {
     const getAssignedRoles = async (rawAccount: any): Promise<string[]> => {
         let roles: string[]
         if (rawAccount.accounts === undefined) {
+            const response = await client.getIdentityAccounts(rawAccount.id)
+            const idnAccount = response.data.find((x: { sourceName: string }) => x.sourceName === 'IdentityNow')
+            roles = safeList(idnAccount.attributes ? idnAccount.attributes.assignedGroups : undefined)
+        } else {
             const idnAccount = rawAccount.accounts.find(
                 (x: { source: { name: string } }) => x.source.name === 'IdentityNow'
             )
             roles = safeList(idnAccount.entitlementAttributes.assignedGroups)
-        } else {
-            const response = await client.getIdentityAccounts(rawAccount.id)
-            const idnAccount = response.data.find((x: { sourceName: string }) => x.sourceName === 'IdentityNow')
-            roles = safeList(idnAccount.attributes.assignedGroups)
         }
 
         return roles
