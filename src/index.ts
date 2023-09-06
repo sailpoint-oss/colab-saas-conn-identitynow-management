@@ -24,6 +24,7 @@ import { IDNClient } from './idn-client'
 import { Account } from './model/account'
 import { Role } from './model/role'
 import { Workgroup } from './model/workgroup'
+import { availableRoles } from './roles'
 
 function sleep(ms: number) {
     return new Promise((resolve) => setTimeout(resolve, ms))
@@ -40,7 +41,6 @@ export const connector = async () => {
     const client = new IDNClient(config)
 
     const workgroupRegex = /.+-.+-.+-.+-.+/
-    // const EXCLUDED_ROLES = ['AUDITOR', 'DASHBOARD']
 
     const safeList = (object: any) => {
         let safeList: any[]
@@ -55,91 +55,7 @@ export const connector = async () => {
     }
 
     const getRoles = () => {
-        return [
-            { name: 'Helpdesk', value: 'HELPDESK', description: 'Helpdesk access to IdentityNow' },
-            { name: 'Administrator', value: 'ORG_ADMIN', description: 'Full administrative access to IdentityNow' },
-            {
-                name: 'Cert Administrator',
-                value: 'CERT_ADMIN',
-                description: 'Cert Administrator access to IdentityNow',
-            },
-            {
-                name: 'Report Administrator',
-                value: 'REPORT_ADMIN',
-                description: 'Report Administrator access to IdentityNow',
-            },
-            {
-                name: 'Role Administrator',
-                value: 'ROLE_ADMIN',
-                description: 'Role Administrator access to IdentityNow',
-            },
-            {
-                name: 'Role SubAdministrator',
-                value: 'ROLE_SUBADMIN',
-                description: 'Role SubAdministrator access to IdentityNow',
-            },
-            {
-                name: 'Source Administrator',
-                value: 'SOURCE_ADMIN',
-                description: 'Source Administrator access to IdentityNow',
-            },
-            {
-                name: 'Source Subadministrator',
-                value: 'SOURCE_SUBADMIN',
-                description: 'Source Subadministrator access to IdentityNow',
-            },
-            {
-                name: 'Cloud Gov Admin',
-                value: 'CLOUD_GOV_ADMIN',
-                description: 'Cloud Gov Admin access to IdentityNow',
-            },
-            {
-                name: 'Cloud Gov User',
-                value: 'CLOUD_GOV_USER',
-                description: 'Cloud Gov User access to IdentityNow',
-            },
-            {
-                name: 'Access Intelligence Center - Reader',
-                value: 'sp:aic-dashboard-read',
-                description: 'Access Intelligence Center - Reader access to IdentityNow',
-            },
-            {
-                name: 'Access Intelligence Center - Author',
-                value: 'sp:aic-dashboard-write',
-                description: 'Access Intelligence Center - Author access to IdentityNow',
-            },
-            {
-                name: 'Access Intelligence Center - Admin',
-                value: 'sp:aic-dashboard-admin',
-                description: 'Access Intelligence Center - Admin access to IdentityNow',
-            },
-            {
-                name: 'Cloud Governance - Admin',
-                value: 'CLOUD_GOV_ADMIN',
-                description: 'Admin access to Cloud Governance',
-            },
-            {
-                name: 'Cloud Governance - User',
-                value: 'CLOUD_GOV_USER',
-                description: 'User access to Cloud Governance',
-            },
-            {
-                name: 'SaaS Management - Admin',
-                value: 'SAAS_MANAGEMENT_ADMIN',
-                description: 'Admin access to SaaS Management',
-            },
-            {
-                name: 'SaaS Management - Reader',
-                value: 'SAAS_MANAGEMENT_READER',
-                description: 'Reader access to SaaS Management',
-            },
-            {
-                name: 'User',
-                value: 'user',
-                description:
-                    'User access to IdentityNow. No special permission, it just enables the identity to be managed in a JML flow',
-            },
-        ]
+        return availableRoles
     }
 
     const getWorkgroups = async (): Promise<any> => {
@@ -156,16 +72,19 @@ export const connector = async () => {
         return workgroups
     }
 
-    const getAssignedRoles = (rawAccount: any): string[] => {
+    const getAssignedRoles = async (rawAccount: any): Promise<string[]> => {
         let roles: string[]
-        if (rawAccount.role !== undefined) {
-            roles = safeList(rawAccount.role)
-        } else {
+        if (rawAccount.accounts === undefined) {
             const idnAccount = rawAccount.accounts.find(
-                (x: { source: { type: string } }) => x.source.type === 'IdentityNowConnector'
+                (x: { source: { name: string } }) => x.source.name === 'IdentityNow'
             )
             roles = safeList(idnAccount.entitlementAttributes.assignedGroups)
+        } else {
+            const response = await client.getIdentityAccounts(rawAccount.id)
+            const idnAccount = response.data.find((x: { sourceName: string }) => x.sourceName === 'IdentityNow')
+            roles = safeList(idnAccount.attributes.assignedGroups)
         }
+
         return roles
     }
 
@@ -175,7 +94,7 @@ export const connector = async () => {
             workgroups
                 .filter((w) => w.members.find((a: { externalId: number }) => a.externalId == account.attributes.id))
                 .map((w) => w.id) || []
-        const assignedRoles = getAssignedRoles(rawAccount)
+        const assignedRoles = await getAssignedRoles(rawAccount)
         account.attributes.groups = [...assignedRoles, ...assignedWorkgroups, 'user']
 
         return account
@@ -239,23 +158,22 @@ export const connector = async () => {
             const workgroupMembers = new Set<string>()
             let rawAccounts: any[] = []
             for await (const response of client.accountAggregation()) {
-                rawAccounts = rawAccounts.concat(response.data)
+                rawAccounts = [...rawAccounts, ...response.data]
             }
-            workgroups.forEach((w) => w.members.forEach((x: { alias: string }) => workgroupMembers.add(x.alias)))
+            workgroups.forEach((w) =>
+                w.members.forEach((x: { externalId: string }) => workgroupMembers.add(x.externalId))
+            )
             for (const member of workgroupMembers) {
-                if (!rawAccounts.find((x) => x.name === member)) {
+                if (!rawAccounts.find((x) => x.id === member)) {
                     const response = await client.getAccountDetails(member)
                     rawAccounts.push(response.data)
                 }
             }
 
             for (const rawAccount of rawAccounts) {
-                buildAccount(rawAccount, workgroups)
-                    .then((account) => {
-                        logger.info(account)
-                        res.send(account)
-                    })
-                    .catch(logger.error)
+                const account = await buildAccount(rawAccount, workgroups)
+                logger.info(account)
+                res.send(account)
             }
         })
         .stdAccountRead(async (context: Context, input: StdAccountReadInput, res: Response<StdAccountReadOutput>) => {

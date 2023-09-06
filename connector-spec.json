@@ -84,7 +84,7 @@
     ],
     "accountSchema": {
         "displayAttribute": "name",
-        "identityAttribute": "name",
+        "identityAttribute": "id",
         "groupAttribute": "groups",
         "attributes": [
             {

@@ -36,10 +36,11 @@ export class IDNClient {
         axiosRetry(this.httpClient, {
             retries: 5,
             retryDelay: axiosRetry.exponentialDelay,
-            retryCondition: (error) => {
-                // Only retry if the API call recieves an error code of 429 or 400
-                return error.response!.status === 429 || error.response!.status === 400
-            },
+            retryCondition: axiosRetry.isRetryableError,
+            // retryCondition: (error) => {
+            //     // Only retry if the API call recieves an error code of 429 or 400
+            //     return error.response!.status === 429 || error.response!.status === 400
+            // },
         })
     }
 
@@ -164,9 +165,28 @@ export class IDNClient {
         }
     }
 
-    async getAccountDetails(name: string): Promise<AxiosResponse> {
+    async getAccountDetails(id: string): Promise<AxiosResponse> {
         const token = await this.getApiToken()
-        const url = `/v2/search/identities`
+        const url = `/beta/identities/${id}`
+
+        let request: AxiosRequestConfig = {
+            method: 'get',
+            url,
+            headers: {
+                Authorization: `Bearer ${token}`,
+                'Content-Type': 'application/json',
+                Accept: 'application/json',
+            },
+        }
+
+        const response = await this.httpClient.request(request)
+
+        return response
+    }
+
+    async getIdentityAccounts(id: string): Promise<AxiosResponse> {
+        const token = await this.getApiToken()
+        const url = `/beta/accounts`
 
         let request: AxiosRequestConfig = {
             method: 'get',
@@ -177,12 +197,11 @@ export class IDNClient {
                 Accept: 'application/json',
             },
             params: {
-                query: `attributes.uid:${name}`,
+                filters: `identityId eq "${id}"`,
             },
         }
 
         const response = await this.httpClient.request(request)
-        response.data = response.data.pop()
 
         return response
     }
@@ -260,7 +279,7 @@ export class IDNClient {
 
     async *workgroupAggregation() {
         const token = await this.getApiToken()
-        const url = `/v2/workgroups`
+        const url = `/beta/workgroups`
 
         let request: AxiosRequestConfig = {
             method: 'get',
