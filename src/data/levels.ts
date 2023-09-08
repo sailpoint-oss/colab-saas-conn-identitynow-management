@@ -1,4 +1,4 @@
-export const availableRoles = [
+export const levels = [
     { name: 'Helpdesk', value: 'HELPDESK', description: 'Helpdesk access to IdentityNow' },
     { name: 'Administrator', value: 'ORG_ADMIN', description: 'Full administrative access to IdentityNow' },
     {

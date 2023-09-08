@@ -1,16 +1,16 @@
 import { Attributes } from '@sailpoint/connector-sdk'
 
-export class Workgroup {
+export class LCS {
     identity: string
     uuid: string
-    type: string = 'workgroup'
+    type: string = 'lcs'
     attributes: Attributes
 
     constructor(object: any) {
         this.attributes = {
-            type: 'Governance group',
+            type: 'Lifecycle state',
             name: object.name,
-            id: object.id,
+            id: object.value,
             description: object.description,
         }
         this.identity = this.attributes.id as string

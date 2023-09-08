@@ -1,14 +1,14 @@
 import { Attributes } from '@sailpoint/connector-sdk'
 
-export class Role {
+export class Level {
     identity: string
     uuid: string
-    type: string = 'group'
+    type: string = 'level'
     attributes: Attributes
 
     constructor(object: any) {
         this.attributes = {
-            type: 'Role',
+            type: 'Level',
             name: object.name,
             id: object.value,
             description: object.description,
