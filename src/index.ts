@@ -173,6 +173,20 @@ export const connector = async () => {
         return lcs
     }
 
+    const isValidLCS = async (id: string, source: string): Promise<boolean> => {
+        let found = false
+        const response1 = await client.getIdentityProfiles()
+        const identityProfile = response1.data.find(
+            (x: { authoritativeSource: { id: string } }) => x.authoritativeSource.id === source
+        )
+        if (identityProfile) {
+            const response2 = await client.getLifecycleStates(identityProfile.id)
+            found = response2.data.indexOf((x: { id: string }) => x.id === id) >= 0
+        }
+
+        return found
+    }
+
     const buildAccount = async (rawAccount: any, workgroups?: any[], privilegedUsers?: any[]): Promise<Account> => {
         logger.info(`Building account with uid ${rawAccount.attributes.uid}`)
         const account: Account = new Account(rawAccount)
@@ -361,7 +375,11 @@ export const connector = async () => {
                 }
 
                 if ('lcs' in input.attributes) {
-                    await provisionLCS(AttributeChangeOp.Add, rawAccount.id, input.attributes.lcs)
+                    if (await isValidLCS(input.attributes.lcs, rawAccount.attributes.cloudAuthoritativeSource)) {
+                        await provisionLCS(AttributeChangeOp.Add, rawAccount.id, input.attributes.lcs)
+                    } else {
+                        logger.info(`Invalid lcs ${input.attributes.lcs}. Skipping.`)
+                    }
                 }
 
                 const account = await getAccount(rawAccount.id)
@@ -386,7 +404,13 @@ export const connector = async () => {
                                 await provisionWorkgroups(change.op, input.identity, workgroups)
                                 break
                             case 'lcs':
-                                await provisionLCS(change.op, input.identity, change.value)
+                                const response = await client.getAccountDetails(input.identity)
+                                const rawAccount = response.data
+                                if (await isValidLCS(change.value, rawAccount.attributes.cloudAuthoritativeSource)) {
+                                    await provisionLCS(change.op, input.identity, change.value)
+                                } else {
+                                    logger.info(`Invalid lcs ${change.value}. Skipping.`)
+                                }
                                 break
                             default:
                                 break

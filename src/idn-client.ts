@@ -495,7 +495,7 @@ export class IDNClient {
         }
 
         const response = await this.httpClient.request(request)
-        // await sleep(5000)
+        await sleep(5000)
 
         return response
     }
