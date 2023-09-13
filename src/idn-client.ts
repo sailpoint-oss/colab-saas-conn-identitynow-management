@@ -432,6 +432,7 @@ export class IDNClient {
             data: [{ op: 'replace', path: '/capabilities', value: roles }],
         }
 
+        await sleep(2000)
         return await this.httpClient.request(request)
     }
 
@@ -453,6 +454,7 @@ export class IDNClient {
             },
         }
 
+        await sleep(2000)
         return await this.httpClient.request(request)
     }
 
@@ -474,6 +476,7 @@ export class IDNClient {
             },
         }
 
+        await sleep(2000)
         return await this.httpClient.request(request)
     }
 
@@ -512,6 +515,7 @@ export class IDNClient {
             },
         }
 
+        await sleep(2000)
         return await this.httpClient.request(request)
     }
 
@@ -526,6 +530,8 @@ export class IDNClient {
                 Authorization: `Bearer ${token}`,
             },
         }
+
+        await sleep(2000)
         return await this.httpClient.request(request)
     }
 
