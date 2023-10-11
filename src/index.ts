@@ -656,6 +656,7 @@ export const connector = async () => {
                         multi: true,
                         entitlement: true,
                         managed: true,
+                        schemaObjectType: 'level',
                     })
                 }
 
@@ -667,6 +668,7 @@ export const connector = async () => {
                         multi: true,
                         entitlement: true,
                         managed: true,
+                        schemaObjectType: 'workgroup',
                     })
                 }
 
@@ -678,6 +680,7 @@ export const connector = async () => {
                         multi: false,
                         entitlement: true,
                         managed: true,
+                        schemaObjectType: 'lcs',
                     })
                 }
 
