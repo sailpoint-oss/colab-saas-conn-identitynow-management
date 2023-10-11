@@ -1,4 +1,5 @@
 import { Attributes } from '@sailpoint/connector-sdk'
+import { LevelSource } from '../data/levels'
 
 export class Level {
     identity: string
@@ -6,7 +7,7 @@ export class Level {
     type: string = 'level'
     attributes: Attributes
 
-    constructor(object: any) {
+    constructor(object: LevelSource) {
         this.attributes = {
             type: 'Level',
             name: object.name,

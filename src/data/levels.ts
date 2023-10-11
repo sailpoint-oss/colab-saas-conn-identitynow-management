@@ -1,4 +1,10 @@
-export const levels = [
+export type LevelSource = {
+    name: string
+    value: string
+    description: string
+}
+
+export const levels: LevelSource[] = [
     { name: 'Helpdesk', value: 'HELPDESK', description: 'Helpdesk access to IdentityNow' },
     { name: 'Administrator', value: 'ORG_ADMIN', description: 'Full administrative access to IdentityNow' },
     {

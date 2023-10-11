@@ -29,7 +29,6 @@ import {
     AuthUser,
     AuthUserApi,
     AuthUserApiPatchAuthUserRequest,
-    CertificationsApi,
     IdentityDocument,
     JsonPatchOperation,
     LifecycleState,

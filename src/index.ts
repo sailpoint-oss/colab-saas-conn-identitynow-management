@@ -30,7 +30,7 @@ import { AccountResponse } from './model/account'
 import { Level } from './model/level'
 import { Workgroup } from './model/workgroup'
 import { levels } from './data/levels'
-import { LCS } from './model/lcs'
+import { LCS, LCSSource } from './model/lcs'
 import { SDKClient } from './sdk-client'
 import {
     BaseAccount,
@@ -91,9 +91,9 @@ export const connector = async () => {
         for (const ip of identityProfiles) {
             const states = await client.listLifecycleStates(ip.id as string)
             for (const s of states) {
-                const state = {
+                const state: LCSSource = {
                     name: `${ip.name} - ${s.name}`,
-                    value: s.id,
+                    value: s.id as string,
                     description: `${s.name} lifecycle state for ${ip.name} identity profile`,
                 }
                 entitlements.push(new LCS(state))
