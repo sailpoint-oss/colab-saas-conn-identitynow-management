@@ -19,17 +19,53 @@ import {
     StdAccountCreateOutput,
     StdAccountListInput,
     StdEntitlementListInput,
+    ConnectorErrorType,
+    StdAccountDiscoverSchemaOutput,
+    StdAccountDisableInput,
+    StdAccountDisableOutput,
+    StdAccountEnableInput,
+    StdAccountEnableOutput,
 } from '@sailpoint/connector-sdk'
-import { AxiosResponse } from 'axios'
-import { IDNClient } from './idn-client'
-import { Account } from './model/account'
+import { AccountResponse } from './model/account'
 import { Level } from './model/level'
 import { Workgroup } from './model/workgroup'
 import { levels } from './data/levels'
 import { LCS } from './model/lcs'
+import { SDKClient } from './sdk-client'
+import {
+    BaseAccount,
+    IdentityBeta,
+    IdentityDocument,
+    ListWorkgroupMembers200ResponseInnerV2,
+    Owner,
+    WorkflowBeta,
+    WorkgroupDtoBeta,
+} from 'sailpoint-api-client'
+
+import jwt_decode from 'jwt-decode'
+import { EmailWorkflow } from './model/emailWorkflow'
+import { ErrorEmail } from './model/email'
 
 function sleep(ms: number) {
     return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+const safeList = (object: any) => {
+    let safeList: any[]
+    if (typeof object === 'string') {
+        safeList = [object]
+    } else if (object === undefined) {
+        safeList = []
+    } else {
+        safeList = object
+    }
+    return safeList
+}
+
+const WORKFLOW_NAME = 'IdentityNow Management - Email sender'
+
+type WorkgroupWithMembers = WorkgroupDtoBeta & {
+    members: ListWorkgroupMembers200ResponseInnerV2[]
 }
 
 // Connector must be exported as module property named connector
@@ -37,39 +73,24 @@ export const connector = async () => {
     // Get connector source config
     const config = await readConfig()
     const { removeGroups, enableLevels, enableWorkgroups, enableLCS } = config
-
-    // Use the vendor SDK, or implement own client as necessary, to initialize a client
-    const client = new IDNClient(config)
-
-    const safeList = (object: any) => {
-        let safeList: any[]
-        if (typeof object === 'string') {
-            safeList = [object]
-        } else if (object === undefined) {
-            safeList = []
-        } else {
-            safeList = object
-        }
-        return safeList
-    }
+    const client = new SDKClient(config)
 
     const getWorkgroupEntitlements = async (): Promise<Workgroup[]> => {
-        const entitlements = []
-        for await (const response of client.workgroupAggregation()) {
-            for (const w of response.data) {
-                entitlements.push(new Workgroup(w))
-            }
+        const entitlements: Workgroup[] = []
+        const workgroups = await client.listWorkgroups()
+        for (const w of workgroups) {
+            entitlements.push(new Workgroup(w))
         }
 
         return entitlements
     }
 
     const getLCSEntitlements = async (): Promise<LCS[]> => {
-        const entitlements = []
-        const response1 = await client.getIdentityProfiles()
-        for (const ip of response1.data) {
-            const response2 = await client.getLifecycleStates(ip.id)
-            for (const s of response2.data) {
+        const entitlements: LCS[] = []
+        const identityProfiles = await client.listIdentityProfiles()
+        for (const ip of identityProfiles) {
+            const states = await client.listLifecycleStates(ip.id as string)
+            for (const s of states) {
                 const state = {
                     name: `${ip.name} - ${s.name}`,
                     value: s.id,
@@ -86,14 +107,14 @@ export const connector = async () => {
         return levels.map((x) => new Level(x))
     }
 
-    const getWorkgroupsWithMembers = async (): Promise<any> => {
-        const workgroups: any[] = []
-        for await (const response1 of client.workgroupAggregation()) {
-            for (const workgroup of response1.data) {
-                const response2 = await client.getWorkgroupMembership(workgroup.id)
-                workgroup.members = response2.data
-                workgroups.push(workgroup)
-            }
+    const getWorkgroupsWithMembers = async (): Promise<WorkgroupWithMembers[]> => {
+        const workgroups: WorkgroupWithMembers[] = []
+        const wgs = await client.listWorkgroups()
+
+        for (const w of wgs) {
+            const members = await client.listWorkgroupMembers(w.id as string)
+            const workgroup = { ...w, members } as any
+            workgroups.push(workgroup)
         }
 
         return workgroups
@@ -115,26 +136,30 @@ export const connector = async () => {
         return assignedWorkgroups
     }
 
-    const getAssignedLevels = async (id: string, privilegedUsers?: any[]): Promise<string[]> => {
+    const getAssignedLevels = async (id: string, privilegedUsers?: IdentityDocument[]): Promise<string[]> => {
         logger.info('Fetching levels')
         let levels: string[]
-        let accounts: any[]
+        let accounts: BaseAccount[]
         if (privilegedUsers) {
             const privilegedUser = privilegedUsers.find((x) => x.id === id)
             if (privilegedUser) {
-                accounts = privilegedUser.accounts
+                accounts = privilegedUser.accounts as BaseAccount[]
             } else {
                 accounts = []
             }
         } else {
-            const response = await client.getIdentityAccounts(id)
-            accounts = response.data
+            accounts = (await client.listAccountsByIdentity(id)).map((x) => ({
+                source: {
+                    id: x.sourceId,
+                    name: x.sourceName,
+                },
+            }))
         }
         const idnAccount = accounts.find(
-            (x) => x.sourceName === 'IdentityNow' || (x.source && x.source.name === 'IdentityNow')
+            (x) => x.source!.name === 'IdentityNow' || (x.source && x.source.name === 'IdentityNow')
         )
         if (idnAccount) {
-            const attributes = idnAccount.attributes || idnAccount.entitlementAttributes
+            const attributes = idnAccount.entitlementAttributes
             levels = safeList(attributes ? attributes.assignedGroups : undefined)
         } else {
             levels = []
@@ -160,36 +185,37 @@ export const connector = async () => {
 
     const getLCSByName = async (name: string, source: string): Promise<string | null> => {
         let lcs: string | null = null
-        const response1 = await client.getIdentityProfiles()
-        const identityProfile = response1.data.find(
-            (x: { authoritativeSource: { id: string } }) => x.authoritativeSource.id === source
-        )
+        const identityProfiles = await client.listIdentityProfiles()
+        const identityProfile = identityProfiles.find((x) => x.authoritativeSource.id === source)
         if (identityProfile) {
-            const response2 = await client.getLifecycleStates(identityProfile.id)
-            const lcsObject = response2.data.find((x: { technicalName: string }) => x.technicalName === name)
-            if (lcsObject) lcs = lcsObject.id
+            const states = await client.listLifecycleStates(identityProfile.id as string)
+            const lcsObject = states.find((x) => x.technicalName === name)
+            if (lcsObject) lcs = lcsObject.id as string
         }
 
         return lcs
     }
 
-    const isValidLCS = async (id: string, source: string): Promise<boolean> => {
+    const isValidLCS = async (lcsID: string, source: string): Promise<boolean> => {
         let found = false
-        const response1 = await client.getIdentityProfiles()
-        const identityProfile = response1.data.find(
-            (x: { authoritativeSource: { id: string } }) => x.authoritativeSource.id === source
-        )
+        const identityProfiles = await client.listIdentityProfiles()
+        const identityProfile = identityProfiles.find((x) => x.authoritativeSource.id === source)
         if (identityProfile) {
-            const response2 = await client.getLifecycleStates(identityProfile.id)
-            found = response2.data.indexOf((x: { id: string }) => x.id === id) >= 0
+            const states = await client.listLifecycleStates(identityProfile.id as string)
+            found = states.find((x) => x.id === lcsID) ? true : false
         }
 
         return found
     }
 
-    const buildAccount = async (rawAccount: any, workgroups?: any[], privilegedUsers?: any[]): Promise<Account> => {
-        logger.info(`Building account with uid ${rawAccount.attributes.uid}`)
-        const account: Account = new Account(rawAccount)
+    const buildAccount = async (
+        rawAccount: IdentityBeta,
+        workgroups?: any[],
+        privilegedUsers?: IdentityDocument[]
+    ): Promise<AccountResponse> => {
+        const uid = (rawAccount.attributes as any).uid
+        logger.info(`Building account with uid ${uid}`)
+        const account: AccountResponse = new AccountResponse(rawAccount)
 
         if (enableLevels) {
             account.attributes.levels = await getAssignedLevels(account.identity, privilegedUsers)
@@ -219,8 +245,7 @@ export const connector = async () => {
 
     const provisionLevels = async (action: AttributeChangeOp, id: string, levels: string[]) => {
         logger.info(`Levels| Executing ${action} operation for ${id}/${levels}`)
-        const response = await client.getCapabilities(id)
-        const capabilities: string[] = response.data.capabilities || []
+        const capabilities = await client.getCapabilities(id)
         let resultingRoles: string[] = []
         if (action === AttributeChangeOp.Add) {
             resultingRoles = [...levels, ...capabilities]
@@ -228,57 +253,77 @@ export const connector = async () => {
             resultingRoles = capabilities.filter((x) => !levels.includes(x))
         }
 
-        await client.provisionLevels(id, resultingRoles)
+        await client.setCapabilities(id, resultingRoles)
     }
 
     const provisionLCS = async (action: AttributeChangeOp, id: string, lcs: string) => {
         logger.info(`LCS| Executing ${action} operation for ${id}/${lcs}`)
 
         if (action === AttributeChangeOp.Remove) {
-            // const response = await client.getAccountDetails(id)
-            // const rawAccount = response.data
-            // if (rawAccount.attributes.cloudLifecycleState) {
-            //     const defaultLCS = await getLCSByName(
-            //         rawAccount.attributes.cloudLifecycleState,
-            //         rawAccount.attributes.cloudAuthoritativeSource
-            //     )
-            //     if (defaultLCS) {
-            //         await client.setLifecycleState(id, defaultLCS)
-            //     }
-            // }
+            logger.info('Ignoring LCS removal request')
         } else {
             await client.setLifecycleState(id, lcs)
         }
     }
 
-    const getAccount = async (id: string): Promise<Account> => {
+    const getAccount = async (id: string): Promise<AccountResponse> => {
         logger.info(`Getting details for account ID ${id}`)
-        const response = await client.getAccountDetails(id)
-        const account = await buildAccount(response.data)
+        const rawAccount = await client.getAccountDetails(id)
+        const account = await buildAccount(rawAccount)
         return account
+    }
+
+    const getWorkflow = async (name: string): Promise<WorkflowBeta | undefined> => {
+        const workflows = await client.listWorkflows()
+
+        return workflows.find((x) => x.name === name)
+    }
+
+    let identityId: string | undefined
+    const workflow = await getWorkflow(WORKFLOW_NAME)
+    if (workflow) {
+        logger.info('Email workflow already present')
+    } else {
+        const accessToken = await client.config.accessToken
+        const jwt = jwt_decode(accessToken as string) as any
+        identityId = jwt.identity_id
+        const owner: Owner = {
+            id: identityId,
+            type: 'IDENTITY',
+        }
+        const emailWorkflow = new EmailWorkflow(WORKFLOW_NAME, owner)
+        await client.createWorkflow(emailWorkflow)
+    }
+
+    const logErrors = async (workflow: WorkflowBeta | undefined, context: Context, input: any, errors: string[]) => {
+        let lines = []
+        lines.push(`Context: ${JSON.stringify(context)}`)
+        lines.push(`Input: ${JSON.stringify(input)}`)
+        lines.push('Errors:')
+        lines = [...lines, ...errors]
+        const message = lines.join('\n')
+        const email = new ErrorEmail(message, identityId as string)
+
+        if (workflow) {
+            await client.testWorkflow(workflow!.id!, email)
+        }
     }
 
     return createConnector()
         .stdTestConnection(async (context: Context, input: undefined, res: Response<StdTestConnectionOutput>) => {
-            const response1: AxiosResponse = await client.testConnection()
-            const response2 = await client.getOathkeeperToken()
-            if (response1.status != 200 || typeof response2 !== 'string') {
-                throw new ConnectorError('Unable to connect to IdentityNow! Please check your Username and Password')
-            } else {
-                logger.info('Test successful!')
-                res.send({})
-            }
+            logger.info('Test successful!')
+            res.send({})
         })
         .stdAccountList(async (context: Context, input: StdAccountListInput, res: Response<StdAccountListOutput>) => {
-            const groups: any[] = await getWorkgroupsWithMembers()
-            let privilegedUsers: any[] = []
+            const errors: string[] = []
 
-            for await (const response of client.getPrivilegedIdentities()) {
-                privilegedUsers = [...privilegedUsers, ...response.data]
-            }
+            try {
+                const groups: WorkgroupWithMembers[] = await getWorkgroupsWithMembers()
+                const privilegedUsers = await client.listPrivilegedIdentities()
 
-            for await (const response of client.accountAggregation()) {
-                for (const identity of response.data) {
+                const identities = await client.listIdentities()
+
+                for (const identity of identities) {
                     const account = await buildAccount(identity, groups, privilegedUsers)
                     const levels = account.attributes.levels as string[]
                     const workgroups = account.attributes.workgroups as string[]
@@ -288,171 +333,356 @@ export const connector = async () => {
                         res.send(account)
                     }
                 }
+            } catch (e) {
+                if (e instanceof Error) {
+                    logger.error(e.message)
+                    errors.push(e.message)
+                }
+            }
+
+            if (errors.length > 0) {
+                await logErrors(workflow, context, input, errors)
             }
         })
         .stdAccountRead(async (context: Context, input: StdAccountReadInput, res: Response<StdAccountReadOutput>) => {
-            logger.info(input)
-            const account = await getAccount(input.identity)
+            const errors: string[] = []
 
-            logger.info(account)
-            res.send(account)
+            let account: AccountResponse | undefined
+            try {
+                logger.info(input)
+                account = await getAccount(input.identity)
+            } catch (e) {
+                if (e instanceof Error) {
+                    logger.error(e.message)
+                    errors.push(e.message)
+                }
+            }
+
+            if (account) {
+                logger.info(account)
+                res.send(account)
+            } else {
+                throw new ConnectorError('Account not found', ConnectorErrorType.NotFound)
+            }
+
+            if (errors.length > 0) {
+                await logErrors(workflow, context, input, errors)
+            }
         })
         .stdEntitlementList(
             async (context: Context, input: StdEntitlementListInput, res: Response<StdEntitlementListOutput>) => {
-                logger.info(input)
-                let entitlements: StdEntitlementListOutput[] = []
-                switch (input.type) {
-                    case 'level':
-                        if (enableLevels) {
-                            entitlements = getLevelEntitlements()
-                        }
-                        break
+                const errors: string[] = []
 
-                    case 'workgroup':
-                        if (enableWorkgroups) {
-                            entitlements = await getWorkgroupEntitlements()
-                        }
-                        break
+                try {
+                    logger.info(input)
+                    let entitlements: StdEntitlementListOutput[] = []
+                    switch (input.type) {
+                        case 'level':
+                            if (enableLevels) {
+                                entitlements = getLevelEntitlements()
+                            }
+                            break
 
-                    case 'lcs':
-                        if (enableLCS) {
-                            entitlements = await getLCSEntitlements()
-                        }
-                        break
+                        case 'workgroup':
+                            if (enableWorkgroups) {
+                                entitlements = await getWorkgroupEntitlements()
+                            }
+                            break
 
-                    default:
-                        throw new Error(`Unsupported entitlement type ${input.type}`)
+                        case 'lcs':
+                            if (enableLCS) {
+                                entitlements = await getLCSEntitlements()
+                            }
+                            break
+
+                        default:
+                            throw new ConnectorError(`Unsupported entitlement type ${input.type}`)
+                    }
+                    for (const e of entitlements) {
+                        logger.info(e)
+                        res.send(e)
+                    }
+                } catch (e) {
+                    if (e instanceof Error) {
+                        logger.error(e.message)
+                        errors.push(e.message)
+                    }
                 }
-                for (const e of entitlements) {
-                    logger.info(e)
-                    res.send(e)
+
+                if (errors.length > 0) {
+                    await logErrors(workflow, context, input, errors)
                 }
             }
         )
         .stdEntitlementRead(
             async (context: Context, input: StdEntitlementReadInput, res: Response<StdEntitlementReadOutput>) => {
-                logger.info(input)
-                let entitlement
+                const errors: string[] = []
 
-                switch (input.type) {
-                    case 'level':
-                        entitlement = getLevelEntitlements().find((x) => input.identity === x.identity)
-                        break
+                try {
+                    logger.info(input)
+                    let entitlement: StdEntitlementReadOutput | undefined
 
-                    case 'workgroup':
-                        const response = await client.getWorkgroup(input.identity)
-                        entitlement = new Workgroup(response.data)
-                        break
+                    switch (input.type) {
+                        case 'level':
+                            entitlement = getLevelEntitlements().find((x) => input.identity === x.identity)
+                            break
 
-                    case 'lcs':
-                        entitlement = (await getLCSEntitlements()).find((x) => input.identity === x.identity)
-                        break
+                        case 'workgroup':
+                            const workgroup = await client.getWorkgroup(input.identity)
+                            entitlement = new Workgroup(workgroup)
+                            break
 
-                    default:
-                        throw new Error(`Unsupported entitlement type ${input.type}`)
+                        case 'lcs':
+                            entitlement = (await getLCSEntitlements()).find((x) => input.identity === x.identity)
+                            break
+
+                        default:
+                            throw new ConnectorError(`Unsupported entitlement type ${input.type}`)
+                    }
+
+                    if (entitlement) {
+                        logger.info(entitlement)
+                        res.send(entitlement)
+                    }
+                } catch (e) {
+                    if (e instanceof Error) {
+                        logger.error(e.message)
+                        errors.push(e.message)
+                    }
                 }
 
-                if (entitlement) {
-                    logger.info(entitlement)
-                    res.send(entitlement)
+                if (errors.length > 0) {
+                    await logErrors(workflow, context, input, errors)
                 }
             }
         )
         .stdAccountCreate(
             async (context: Context, input: StdAccountCreateInput, res: Response<StdAccountCreateOutput>) => {
-                logger.info(input)
-                const response = await client.getIdentityByUID(input.attributes.uid as string)
-                let rawAccount = response.data
+                const errors: string[] = []
 
-                if ('levels' in input.attributes) {
-                    const levels = [].concat(input.attributes.levels).filter((x) => x !== 'user')
-                    await provisionLevels(AttributeChangeOp.Add, rawAccount.id, levels)
-                }
+                try {
+                    logger.info(input)
+                    const rawAccount = await client.getIdentityByUID(input.attributes.uid as string)
+                    if (rawAccount) {
+                        if ('levels' in input.attributes) {
+                            const levels = [].concat(input.attributes.levels).filter((x) => x !== 'user')
+                            await provisionLevels(AttributeChangeOp.Add, rawAccount.id, levels)
+                        }
 
-                if ('workgroups' in input.attributes) {
-                    const workgroups = [].concat(input.attributes.workgroups)
-                    await provisionWorkgroups(AttributeChangeOp.Add, rawAccount.id, workgroups)
-                }
+                        if ('workgroups' in input.attributes) {
+                            const workgroups = [].concat(input.attributes.workgroups)
+                            await provisionWorkgroups(AttributeChangeOp.Add, rawAccount.id, workgroups)
+                        }
 
-                if ('lcs' in input.attributes) {
-                    if (await isValidLCS(input.attributes.lcs, rawAccount.attributes.cloudAuthoritativeSource)) {
-                        await provisionLCS(AttributeChangeOp.Add, rawAccount.id, input.attributes.lcs)
+                        if ('lcs' in input.attributes) {
+                            if (
+                                await isValidLCS(input.attributes.lcs, rawAccount.attributes!.cloudAuthoritativeSource)
+                            ) {
+                                await provisionLCS(AttributeChangeOp.Add, rawAccount.id, input.attributes.lcs)
+                            } else {
+                                logger.info(`Invalid lcs ${input.attributes.lcs}. Skipping.`)
+                            }
+                        }
+
+                        const account = await getAccount(rawAccount.id)
+
+                        logger.info(account)
+                        res.send(account)
                     } else {
-                        logger.info(`Invalid lcs ${input.attributes.lcs}. Skipping.`)
+                        throw new ConnectorError(`Unable to find ${input.attributes.uid} UID`)
+                    }
+                } catch (e) {
+                    if (e instanceof Error) {
+                        logger.error(e.message)
+                        errors.push(e.message)
                     }
                 }
 
-                const account = await getAccount(rawAccount.id)
-
-                logger.info(account)
-                res.send(account)
+                if (errors.length > 0) {
+                    await logErrors(workflow, context, input, errors)
+                }
             }
         )
         .stdAccountUpdate(
             async (context: Context, input: StdAccountUpdateInput, res: Response<StdAccountUpdateOutput>) => {
-                logger.info(input)
+                const errors: string[] = []
 
-                if (input.changes) {
-                    for (const change of input.changes) {
-                        switch (change.attribute) {
-                            case 'levels':
-                                const levels = [].concat(change.value).filter((x) => x !== 'user')
-                                await provisionLevels(change.op, input.identity, levels)
-                                break
-                            case 'workgroups':
-                                const workgroups = [].concat(change.value)
-                                await provisionWorkgroups(change.op, input.identity, workgroups)
-                                break
-                            case 'lcs':
-                                const response = await client.getAccountDetails(input.identity)
-                                const rawAccount = response.data
-                                if (await isValidLCS(change.value, rawAccount.attributes.cloudAuthoritativeSource)) {
-                                    await provisionLCS(change.op, input.identity, change.value)
-                                } else {
-                                    logger.info(`Invalid lcs ${change.value}. Skipping.`)
-                                }
-                                break
-                            default:
-                                break
+                try {
+                    logger.info(input)
+
+                    if (input.changes) {
+                        for (const change of input.changes) {
+                            switch (change.attribute) {
+                                case 'levels':
+                                    const levels = [].concat(change.value).filter((x) => x !== 'user')
+                                    await provisionLevels(change.op, input.identity, levels)
+                                    break
+                                case 'workgroups':
+                                    const workgroups = [].concat(change.value)
+                                    await provisionWorkgroups(change.op, input.identity, workgroups)
+                                    break
+                                case 'lcs':
+                                    const rawAccount = await client.getAccountDetails(input.identity)
+                                    const cloudAuthoritativeSource = (rawAccount.attributes as any)
+                                        .cloudAuthoritativeSource
+                                    if (await isValidLCS(change.value, cloudAuthoritativeSource)) {
+                                        await provisionLCS(change.op, input.identity, change.value)
+                                    } else {
+                                        logger.info(`Invalid lcs ${change.value}. Skipping.`)
+                                    }
+                                    break
+                                default:
+                                    break
+                            }
                         }
+                        //Need to investigate about std:account:update operations without changes but adding this for the moment
+                    } else if ('attributes' in input) {
+                        logger.warn(
+                            'No changes detected in account update. Please report unless you used attribute sync which is not supported.'
+                        )
                     }
-                    //Need to investigate about std:account:update operations without changes but adding this for the moment
-                } else if ('attributes' in input) {
-                    logger.warn(
-                        'No changes detected in account update. Please report unless you used attribute sync which is not supported.'
-                    )
+
+                    const account = await getAccount(input.identity)
+
+                    logger.info(account)
+                    res.send(account)
+                } catch (e) {
+                    if (e instanceof Error) {
+                        logger.error(e.message)
+                        errors.push(e.message)
+                    }
                 }
 
-                const account = await getAccount(input.identity)
-
-                logger.info(account)
-                res.send(account)
+                if (errors.length > 0) {
+                    await logErrors(workflow, context, input, errors)
+                }
             }
         )
-        .stdAccountDisable(async (context: Context, input: any, res: Response<any>) => {
-            logger.info(input)
-            let account = await getAccount(input.identity)
+        .stdAccountDisable(
+            async (context: Context, input: StdAccountDisableInput, res: Response<StdAccountDisableOutput>) => {
+                const errors: string[] = []
 
-            await client.disableAccount(input.identity)
-            //await sleep(5000)
-            if (removeGroups) {
-                const levels = (account.attributes.levels as string[]) || []
-                await provisionLevels(AttributeChangeOp.Remove, input.identity, levels)
-                const workgroups = (account.attributes.workgroups as string[]) || []
-                await provisionWorkgroups(AttributeChangeOp.Remove, input.identity, workgroups)
+                try {
+                    logger.info(input)
+                    let account = await getAccount(input.identity)
+
+                    await client.disableAccount(input.identity)
+                    //await sleep(5000)
+                    if (removeGroups) {
+                        const levels = (account.attributes.levels as string[]) || []
+                        await provisionLevels(AttributeChangeOp.Remove, input.identity, levels)
+                        const workgroups = (account.attributes.workgroups as string[]) || []
+                        await provisionWorkgroups(AttributeChangeOp.Remove, input.identity, workgroups)
+                    }
+                    account = await getAccount(input.identity)
+
+                    logger.info(account)
+                    res.send(account)
+                } catch (e) {
+                    if (e instanceof Error) {
+                        logger.error(e.message)
+                        errors.push(e.message)
+                    }
+                }
+
+                if (errors.length > 0) {
+                    await logErrors(workflow, context, input, errors)
+                }
             }
-            account = await getAccount(input.identity)
+        )
 
-            logger.info(account)
-            res.send(account)
-        })
+        .stdAccountEnable(
+            async (context: Context, input: StdAccountEnableInput, res: Response<StdAccountEnableOutput>) => {
+                const errors: string[] = []
 
-        .stdAccountEnable(async (context: Context, input: any, res: Response<any>) => {
-            logger.info(input)
+                try {
+                    logger.info(input)
 
-            await client.enableAccount(input.identity)
-            const account = await getAccount(input.identity)
-            logger.info(account)
-            res.send(account)
-        })
+                    await client.enableAccount(input.identity)
+                    const account = await getAccount(input.identity)
+                    logger.info(account)
+                    res.send(account)
+                } catch (e) {
+                    if (e instanceof Error) {
+                        logger.error(e.message)
+                        errors.push(e.message)
+                    }
+                }
+
+                if (errors.length > 0) {
+                    await logErrors(workflow, context, input, errors)
+                }
+            }
+        )
+        .stdAccountDiscoverSchema(
+            async (context: Context, input: undefined, res: Response<StdAccountDiscoverSchemaOutput>) => {
+                const schema: any = {
+                    attributes: [
+                        {
+                            name: 'id',
+                            type: 'string',
+                            description: 'ID',
+                        },
+                        {
+                            name: 'uid',
+                            type: 'string',
+                            description: 'UID',
+                        },
+                        {
+                            name: 'firstName',
+                            type: 'string',
+                            description: 'First name',
+                        },
+                        {
+                            name: 'lastName',
+                            type: 'string',
+                            description: 'Last name',
+                        },
+                        {
+                            name: 'displayName',
+                            type: 'string',
+                            description: 'Display name',
+                        },
+                    ],
+                    displayAttribute: 'uid',
+                    identityAttribute: 'id',
+                }
+
+                if (enableLevels) {
+                    schema.attributes.push({
+                        name: 'levels',
+                        type: 'string',
+                        description: 'User levels',
+                        multi: true,
+                        entitlement: true,
+                        managed: true,
+                    })
+                }
+
+                if (enableWorkgroups) {
+                    schema.attributes.push({
+                        name: 'workgroups',
+                        type: 'string',
+                        description: 'Governance groups',
+                        multi: true,
+                        entitlement: true,
+                        managed: true,
+                    })
+                }
+
+                if (enableLCS) {
+                    schema.attributes.push({
+                        name: 'lcs',
+                        type: 'string',
+                        description: 'Lifecycle state',
+                        multi: false,
+                        entitlement: true,
+                        managed: true,
+                    })
+                }
+
+                logger.info(schema)
+                res.send(schema)
+            }
+        )
 }

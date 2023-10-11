@@ -1,3 +1,4 @@
+//Kept for reference purposes
 import axios, { AxiosRequestConfig, AxiosResponse, AxiosInstance } from 'axios'
 import axiosRetry from 'axios-retry'
 
@@ -37,10 +38,6 @@ export class IDNClient {
             retries: 5,
             retryDelay: axiosRetry.exponentialDelay,
             retryCondition: axiosRetry.isRetryableError,
-            // retryCondition: (error) => {
-            //     // Only retry if the API call recieves an error code of 429 or 400
-            //     return error.response!.status === 429 || error.response!.status === 400
-            // },
         })
     }
 

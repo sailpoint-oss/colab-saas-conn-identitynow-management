@@ -5,7 +5,7 @@ const isDisabled = (object: any): boolean => {
     return status === 'DISABLED'
 }
 
-export class Account {
+export class AccountResponse {
     identity: string
     uuid: string
     attributes: Attributes
