@@ -19,6 +19,7 @@ import {
     WorkflowsBetaApi,
     WorkflowsBetaApiCreateWorkflowRequest,
     TestWorkflowRequestBeta,
+    IdentitiesBetaApiGetIdentityRequest,
 } from 'sailpoint-api-client'
 import {
     AccountsApi,
@@ -27,12 +28,13 @@ import {
     AccountsAsyncResult,
     AuthUser,
     AuthUserApi,
+    AuthUserApiPatchAuthUserRequest,
+    CertificationsApi,
     IdentityDocument,
     JsonPatchOperation,
     LifecycleState,
     LifecycleStatesApi,
     LifecycleStatesApiSetLifecycleStateRequest,
-    PublicIdentitiesApi,
     PublicIdentitiesConfigApi,
     SetLifecycleState200Response,
 } from 'sailpoint-api-client/dist/v3'
@@ -123,7 +125,10 @@ export class SDKClient {
     async getAccountDetails(id: string): Promise<IdentityBeta> {
         const api = new IdentitiesBetaApi(this.config)
 
-        const response = await api.getIdentity({ id })
+        const requestParameters: IdentitiesBetaApiGetIdentityRequest = {
+            id,
+        }
+        const response = await api.getIdentity(requestParameters)
 
         return response.data
     }
@@ -173,7 +178,12 @@ export class SDKClient {
                 value: capabilities,
             },
         ]
-        const response = await api.patchAuthUser({ id, jsonPatchOperation })
+        const requestParameters: AuthUserApiPatchAuthUserRequest = {
+            id,
+            jsonPatchOperation,
+        }
+
+        const response = await api.patchAuthUser(requestParameters)
 
         return response.data
     }

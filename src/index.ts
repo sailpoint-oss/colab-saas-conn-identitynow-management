@@ -113,25 +113,22 @@ export const connector = async () => {
 
         for (const w of wgs) {
             const members = await client.listWorkgroupMembers(w.id as string)
-            const workgroup = { ...w, members } as any
+            const workgroup = { ...w, members } as WorkgroupWithMembers
             workgroups.push(workgroup)
         }
 
         return workgroups
     }
 
-    const getAssignedWorkgroups = async (id: string, groups?: any[]): Promise<string[]> => {
+    const getAssignedWorkgroups = async (id: string, groups?: WorkgroupWithMembers[]): Promise<string[]> => {
         logger.info('Fetching workgroups')
-        let workgroups: any[]
+        let workgroups: WorkgroupWithMembers[]
         if (groups) {
             workgroups = groups
         } else {
             workgroups = await getWorkgroupsWithMembers()
         }
-        const assignedWorkgroups =
-            workgroups
-                .filter((w) => w.members.find((a: { externalId: string }) => a.externalId == id))
-                .map((w) => w.id) || []
+        const assignedWorkgroups = workgroups.filter((w) => w.members.find((a) => a.externalId == id)).map((w) => w.id!)
 
         return assignedWorkgroups
     }
@@ -170,13 +167,13 @@ export const connector = async () => {
         return levels
     }
 
-    const getAssignedLCS = async (rawAccount: any): Promise<string | null> => {
+    const getAssignedLCS = async (rawAccount: IdentityBeta): Promise<string | null> => {
         logger.info('Fetching LCS')
         let lcs: string | null = null
         if (rawAccount.lifecycleState && rawAccount.lifecycleState.manuallyUpdated) {
             lcs = await getLCSByName(
                 rawAccount.lifecycleState.stateName,
-                rawAccount.attributes.cloudAuthoritativeSource
+                (rawAccount.attributes as any).cloudAuthoritativeSource
             )
         }
 
