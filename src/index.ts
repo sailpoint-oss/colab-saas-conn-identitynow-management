@@ -150,6 +150,7 @@ export const connector = async () => {
                     id: x.sourceId,
                     name: x.sourceName,
                 },
+                entitlementAttributes: x.attributes,
             }))
         }
         const idnAccount = accounts.find(

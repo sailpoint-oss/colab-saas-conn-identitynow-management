@@ -1,3 +1,4 @@
+import { AxiosRequestConfig } from 'axios'
 import axiosRetry from 'axios-retry'
 import {
     Configuration,
@@ -25,6 +26,7 @@ import {
     AccountsApi,
     AccountsApiDisableAccountRequest,
     AccountsApiEnableAccountRequest,
+    AccountsApiListAccountsRequest,
     AccountsAsyncResult,
     AuthUser,
     AuthUserApi,
@@ -116,7 +118,14 @@ export class SDKClient {
     async listAccountsByIdentity(id: string): Promise<Account[]> {
         const api = new AccountsApi(this.config)
 
-        const response = await Paginator.paginate(api, api.listAccounts)
+        const filters = `identityId eq "${id}"`
+        const listAccountsByIdentity = (
+            requestParameters?: AccountsApiListAccountsRequest,
+            axiosOptions?: AxiosRequestConfig
+        ): Promise<import('axios').AxiosResponse<Account[], any>> => {
+            return api.listAccounts({ filters }, axiosOptions)
+        }
+        const response = await Paginator.paginate(api, listAccountsByIdentity)
 
         return response.data
     }
