@@ -1,5 +1,5 @@
-import { AxiosRequestConfig } from 'axios'
-import axiosRetry from 'axios-retry'
+import { AxiosError, AxiosRequestConfig } from 'axios'
+import axiosRetry, { isRetryableError } from 'axios-retry'
 import {
     Configuration,
     Paginator,
@@ -37,7 +37,6 @@ import {
     LifecycleState,
     LifecycleStatesApi,
     LifecycleStatesApiSetLifecycleStateRequest,
-    PublicIdentitiesConfigApi,
     SetLifecycleState200Response,
 } from 'sailpoint-api-client/dist/v3'
 import { URL } from 'url'
@@ -48,11 +47,15 @@ function sleep(ms: number) {
     return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
+const retryCondition = (error: AxiosError): boolean => {
+    return axiosRetry.isRetryableError(error) || (error.response ? error.response.status === 429 : false)
+}
+
 const axiosOptions: AxiosRequestConfig = {
     'axios-retry': {
         retries: 5,
         retryDelay: axiosRetry.exponentialDelay,
-        retryCondition: axiosRetry.isRetryableError,
+        retryCondition,
     },
 }
 
@@ -84,14 +87,14 @@ export class SDKClient {
     async listLifecycleStates(identityProfileId: string): Promise<LifecycleState[]> {
         const api = new LifecycleStatesApi(this.config)
 
-        const response = await api.listLifecycleStates({ identityProfileId }, axiosOptions)
+        const response = await api.listLifecycleStates({ identityProfileId })
 
         return response.data
     }
 
     async listWorkgroupMembers(workgroupId: string): Promise<ListWorkgroupMembers200ResponseInnerV2[]> {
         const api = new GovernanceGroupsV2Api(this.config)
-        const response = await api.listWorkgroupMembers({ workgroupId }, axiosOptions)
+        const response = await api.listWorkgroupMembers({ workgroupId })
 
         return response.data
     }
@@ -128,7 +131,7 @@ export class SDKClient {
             requestParameters?: AccountsApiListAccountsRequest,
             axiosOptions?: AxiosRequestConfig
         ): Promise<import('axios').AxiosResponse<Account[], any>> => {
-            return api.listAccounts({ filters }, axiosOptions)
+            return api.listAccounts({ filters })
         }
         const response = await Paginator.paginate(api, listAccountsByIdentity)
 
@@ -141,7 +144,7 @@ export class SDKClient {
         const requestParameters: IdentitiesBetaApiGetIdentityRequest = {
             id,
         }
-        const response = await api.getIdentity(requestParameters, axiosOptions)
+        const response = await api.getIdentity(requestParameters)
 
         return response.data
     }
@@ -153,7 +156,7 @@ export class SDKClient {
             workgroupId,
             modifyWorkgroupMembersRequestV2: { add: [id] },
         }
-        const response = await api.modifyWorkgroupMembers(requestParameters, axiosOptions)
+        const response = await api.modifyWorkgroupMembers(requestParameters)
 
         await sleep(2000)
         return response.data
@@ -166,7 +169,7 @@ export class SDKClient {
             workgroupId,
             modifyWorkgroupMembersRequestV2: { remove: [id] },
         }
-        const response = await api.modifyWorkgroupMembers(requestParameters, axiosOptions)
+        const response = await api.modifyWorkgroupMembers(requestParameters)
 
         await sleep(2000)
         return response.data
@@ -175,7 +178,7 @@ export class SDKClient {
     async getCapabilities(id: string): Promise<string[]> {
         const api = new AuthUserApi(this.config)
 
-        const response = await api.getAuthUser({ id }, axiosOptions)
+        const response = await api.getAuthUser({ id })
         const capabilities: string[] = response.data.capabilities || []
 
         return capabilities
@@ -196,7 +199,7 @@ export class SDKClient {
             jsonPatchOperation,
         }
 
-        const response = await api.patchAuthUser(requestParameters, axiosOptions)
+        const response = await api.patchAuthUser(requestParameters)
 
         return response.data
     }
@@ -210,7 +213,7 @@ export class SDKClient {
                 lifecycleStateId,
             },
         }
-        const response = await api.setLifecycleState(requestParameters, axiosOptions)
+        const response = await api.setLifecycleState(requestParameters)
 
         return response.data
     }
@@ -218,7 +221,7 @@ export class SDKClient {
     async getWorkgroup(workgroupId: string): Promise<ListWorkgroups200ResponseInnerV2> {
         const api = new GovernanceGroupsV2Api(this.config)
 
-        const response = await api.getWorkgroup({ workgroupId }, axiosOptions)
+        const response = await api.getWorkgroup({ workgroupId })
 
         return response.data
     }
@@ -234,7 +237,7 @@ export class SDKClient {
             sort: ['id'],
             includeNested: true,
         }
-        const response = await api.searchPost({ search }, axiosOptions)
+        const response = await api.searchPost({ search })
 
         if (response.data.length > 0) {
             return response.data[0]
@@ -252,7 +255,7 @@ export class SDKClient {
                 forceProvisioning: true,
             },
         }
-        const response = await api.disableAccount(requestParameters, axiosOptions)
+        const response = await api.disableAccount(requestParameters)
 
         return response.data
     }
@@ -266,7 +269,7 @@ export class SDKClient {
                 forceProvisioning: true,
             },
         }
-        const response = await api.enableAccount(requestParameters, axiosOptions)
+        const response = await api.enableAccount(requestParameters)
 
         return response.data
     }
@@ -282,7 +285,7 @@ export class SDKClient {
     async createWorkflow(workflow: WorkflowsBetaApiCreateWorkflowRequest): Promise<WorkflowBeta> {
         const api = new WorkflowsBetaApi(this.config)
 
-        const response = await api.createWorkflow(workflow, axiosOptions)
+        const response = await api.createWorkflow(workflow)
 
         return response.data
     }
@@ -294,6 +297,6 @@ export class SDKClient {
             id,
             testWorkflowRequestBeta,
         }
-        const response = await api.testWorkflow(requestParameters, axiosOptions)
+        const response = await api.testWorkflow(requestParameters)
     }
 }
