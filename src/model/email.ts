@@ -2,11 +2,11 @@ import { TestWorkflowRequestBeta } from 'sailpoint-api-client'
 
 export class ErrorEmail implements TestWorkflowRequestBeta {
     input: object
-    constructor(error: string, identityId: string) {
+    constructor(recipient: string, error: string) {
         const subject = `IdentityNow Management error report`
         const body = error
         this.input = {
-            recipients: [identityId],
+            recipients: [recipient],
             subject,
             body,
         }

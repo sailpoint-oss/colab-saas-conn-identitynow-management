@@ -309,4 +309,19 @@ export class SDKClient {
         }
         const response = await api.testWorkflow(requestParameters)
     }
+
+    async getIdentity(id: string): Promise<IdentityDocument | undefined> {
+        const api = new SearchApi(this.config)
+        const search: Search = {
+            indices: ['identities'],
+            query: {
+                query: `id:${id}`,
+            },
+            includeNested: true,
+        }
+
+        const response = await api.searchPost({ search })
+
+        return response.data[0]
+    }
 }

@@ -42,7 +42,6 @@ import {
     WorkgroupDtoBeta,
 } from 'sailpoint-api-client'
 
-import jwt_decode from 'jwt-decode'
 import { EmailWorkflow } from './model/emailWorkflow'
 import { ErrorEmail } from './model/email'
 
@@ -277,14 +276,13 @@ export const connector = async () => {
         return workflows.find((x) => x.name === name)
     }
 
-    let identityId: string | undefined
     const workflow = await getWorkflow(WORKFLOW_NAME)
     if (workflow) {
         logger.info('Email workflow already present')
     } else {
         const accessToken = await client.config.accessToken
         const jwt = jwt_decode(accessToken as string) as any
-        identityId = jwt.identity_id
+        const identityId = jwt.identity_id
         const owner: Owner = {
             id: identityId,
             type: 'IDENTITY',
@@ -300,7 +298,8 @@ export const connector = async () => {
         lines.push('Errors:')
         lines = [...lines, ...errors]
         const message = lines.join('\n')
-        const email = new ErrorEmail(message, identityId as string)
+        const recipient = await client.getIdentity(workflow!.owner!.id as string)
+        const email = new ErrorEmail(recipient!.attributes!.email, message)
 
         if (workflow) {
             await client.testWorkflow(workflow!.id!, email)
@@ -482,6 +481,7 @@ export const connector = async () => {
                             }
                         }
 
+                        await sleep(2000)
                         const account = await getAccount(rawAccount.id)
 
                         logger.info(account)
@@ -565,7 +565,7 @@ export const connector = async () => {
                     let account = await getAccount(input.identity)
 
                     await client.disableAccount(input.identity)
-                    //await sleep(5000)
+                    await sleep(5000)
                     if (removeGroups) {
                         const levels = (account.attributes.levels as string[]) || []
                         await provisionLevels(AttributeChangeOp.Remove, input.identity, levels)
@@ -597,6 +597,7 @@ export const connector = async () => {
                     logger.info(input)
 
                     await client.enableAccount(input.identity)
+                    await sleep(5000)
                     const account = await getAccount(input.identity)
                     logger.info(account)
                     res.send(account)
@@ -686,4 +687,7 @@ export const connector = async () => {
                 res.send(schema)
             }
         )
+}
+function jwt_decode(arg0: string): any {
+    throw new Error('Function not implemented.')
 }
