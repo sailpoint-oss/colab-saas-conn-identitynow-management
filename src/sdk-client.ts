@@ -1,5 +1,5 @@
 import { AxiosError, AxiosRequestConfig } from 'axios'
-import axiosRetry, { isRetryableError } from 'axios-retry'
+import axiosRetry from 'axios-retry'
 import {
     Configuration,
     Paginator,
@@ -53,7 +53,7 @@ const retryCondition = (error: AxiosError): boolean => {
 
 const axiosOptions: AxiosRequestConfig = {
     'axios-retry': {
-        retries: 5,
+        retries: 10,
         retryDelay: axiosRetry.exponentialDelay,
         retryCondition,
     },
