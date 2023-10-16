@@ -47,14 +47,24 @@ function sleep(ms: number) {
     return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
+const retries = 10
+
 const retryCondition = (error: AxiosError): boolean => {
     return axiosRetry.isRetryableError(error) || (error.response ? error.response.status === 429 : false)
 }
 
+const retryDelay = (retryCount: number, error: AxiosError<unknown, any>, delayFactor?: number | undefined): number => {
+    if (error.response && error.response.headers['retry-after']) {
+        return error.response.headers['retry-after']
+    } else {
+        return axiosRetry.exponentialDelay(retryCount, error, delayFactor)
+    }
+}
+
 const axiosOptions: AxiosRequestConfig = {
     'axios-retry': {
-        retries: 10,
-        retryDelay: axiosRetry.exponentialDelay,
+        retries,
+        retryDelay,
         retryCondition,
     },
 }
