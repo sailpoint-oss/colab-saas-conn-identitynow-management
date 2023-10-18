@@ -1,4 +1,3 @@
-import { logger, readConfig } from '@sailpoint/connector-sdk'
 import { AxiosError, AxiosRequestConfig } from 'axios'
 import axiosRetry from 'axios-retry'
 import {
