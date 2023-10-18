@@ -558,23 +558,32 @@ export const connector = async () => {
         .stdAccountDisable(
             async (context: Context, input: StdAccountDisableInput, res: Response<StdAccountDisableOutput>) => {
                 const errors: string[] = []
-
+                const NOTFOUND_ERROR = 'Identity not found'
+                let identity: IdentityDocument | undefined
                 try {
                     logger.info(input)
-                    let account = await getAccount(input.identity)
+                    identity = await client.getIdentity(input.identity)
+                    if (identity) {
+                        let account = await getAccount(input.identity)
+                        const idnAccount = identity.accounts!.find(
+                            (x) => x.source!.name === 'IdentityNow' || (x.source && x.source.name === 'IdentityNow')
+                        ) as BaseAccount
 
-                    await client.disableAccount(input.identity)
-                    await sleep(5000)
-                    if (removeGroups) {
-                        const levels = (account.attributes.levels as string[]) || []
-                        await provisionLevels(AttributeChangeOp.Remove, input.identity, levels)
-                        const workgroups = (account.attributes.workgroups as string[]) || []
-                        await provisionWorkgroups(AttributeChangeOp.Remove, input.identity, workgroups)
+                        await client.disableAccount(idnAccount.id!)
+                        await sleep(5000)
+                        if (removeGroups) {
+                            const levels = (account.attributes.levels as string[]) || []
+                            await provisionLevels(AttributeChangeOp.Remove, input.identity, levels)
+                            const workgroups = (account.attributes.workgroups as string[]) || []
+                            await provisionWorkgroups(AttributeChangeOp.Remove, input.identity, workgroups)
+                        }
+                        account = await getAccount(input.identity)
+
+                        logger.info(account)
+                        res.send(account)
+                    } else {
+                        throw new Error(NOTFOUND_ERROR)
                     }
-                    account = await getAccount(input.identity)
-
-                    logger.info(account)
-                    res.send(account)
                 } catch (e) {
                     if (e instanceof Error) {
                         logger.error(e.message)
@@ -584,6 +593,10 @@ export const connector = async () => {
 
                 if (errors.length > 0) {
                     await logErrors(workflow, context, input, errors)
+                }
+
+                if (!identity) {
+                    throw new Error(NOTFOUND_ERROR)
                 }
             }
         )
@@ -591,15 +604,24 @@ export const connector = async () => {
         .stdAccountEnable(
             async (context: Context, input: StdAccountEnableInput, res: Response<StdAccountEnableOutput>) => {
                 const errors: string[] = []
+                const NOTFOUND_ERROR = 'Identity not found'
+                let identity: IdentityDocument | undefined
 
                 try {
                     logger.info(input)
-
-                    await client.enableAccount(input.identity)
-                    await sleep(5000)
-                    const account = await getAccount(input.identity)
-                    logger.info(account)
-                    res.send(account)
+                    identity = await client.getIdentity(input.identity)
+                    if (identity) {
+                        const idnAccount = identity.accounts!.find(
+                            (x) => x.source!.name === 'IdentityNow' || (x.source && x.source.name === 'IdentityNow')
+                        ) as BaseAccount
+                        await client.enableAccount(idnAccount.id!)
+                        await sleep(5000)
+                        const account = await getAccount(input.identity)
+                        logger.info(account)
+                        res.send(account)
+                    } else {
+                        throw new Error(NOTFOUND_ERROR)
+                    }
                 } catch (e) {
                     if (e instanceof Error) {
                         logger.error(e.message)
@@ -609,6 +631,10 @@ export const connector = async () => {
 
                 if (errors.length > 0) {
                     await logErrors(workflow, context, input, errors)
+                }
+
+                if (!identity) {
+                    throw new Error(NOTFOUND_ERROR)
                 }
             }
         )
