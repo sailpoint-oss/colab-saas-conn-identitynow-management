@@ -481,7 +481,6 @@ export const connector = async () => {
                             }
                         }
 
-                        await sleep(2000)
                         const account = await getAccount(rawAccount.id)
 
                         logger.info(account)

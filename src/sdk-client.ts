@@ -1,3 +1,4 @@
+import { logger, readConfig } from '@sailpoint/connector-sdk'
 import { AxiosError, AxiosRequestConfig } from 'axios'
 import axiosRetry from 'axios-retry'
 import {
@@ -50,10 +51,14 @@ function sleep(ms: number) {
 const retries = 10
 
 const retryCondition = (error: AxiosError): boolean => {
+    logger.error('retryCondition')
+    logger.error(error)
     return axiosRetry.isRetryableError(error) || (error.response ? error.response.status === 429 : false)
 }
 
 const retryDelay = (retryCount: number, error: AxiosError<unknown, any>, delayFactor?: number | undefined): number => {
+    logger.error('retryDelay')
+    logger.error(error)
     if (error.response && error.response.headers['retry-after']) {
         return error.response.headers['retry-after']
     } else {
