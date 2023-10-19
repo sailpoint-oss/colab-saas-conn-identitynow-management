@@ -1,20 +1,19 @@
 import { Attributes } from '@sailpoint/connector-sdk'
+import { LevelSource } from '../data/levels'
 
-export class Review {
+export class Level {
     identity: string
     uuid: string
-    type: string
+    type: string = 'level'
     attributes: Attributes
 
-    constructor(id: string, name: string, entity: string, url: string) {
+    constructor(object: LevelSource) {
         this.attributes = {
-            id,
-            name,
-            entity,
-            url,
-            description: url,
+            type: 'Level',
+            name: object.name,
+            id: object.value,
+            description: object.description,
         }
-        this.type = 'review'
         this.identity = this.attributes.id as string
         this.uuid = this.attributes.name as string
     }

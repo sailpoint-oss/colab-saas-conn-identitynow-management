@@ -1,0 +1,71 @@
+[![Discourse Topics][discourse-shield]][discourse-url]
+[![Issues][issues-shield]][issues-url]
+[![Latest Releases][release-shield]][release-url]
+[![Contributor Shield][contributor-shield]][contributors-url]
+
+[discourse-shield]: https://img.shields.io/discourse/topics?label=Discuss%20This%20Tool&server=https%3A%2F%2Fdeveloper.sailpoint.com%2Fdiscuss
+[discourse-url]: https://developer.sailpoint.com/discuss/t/identitynow-management-saas-connector/18175
+[issues-shield]: https://img.shields.io/github/issues/sailpoint-oss/colab-identitynow-management?label=Issues
+[issues-url]: https://github.com/sailpoint-oss/colab-identitynow-management/issues
+[release-shield]: https://img.shields.io/github/v/release/sailpoint-oss/colab-identitynow-management?label=Current%20Release
+[release-url]: https://github.com/sailpoint-oss/colab-identitynow-management/releases
+[contributor-shield]: https://img.shields.io/github/contributors/sailpoint-oss/colab-identitynow-management?label=Contributors
+[contributors-url]: https://github.com/sailpoint-oss/colab-identitynow-management/graphs/contributors
+
+# IdentityNow Management Loopback SaaS Connector
+
+---
+
+This is an IdentityNow loopback connector for managing platform's governance groups and roles like admin, helpdesk, etc., and governance groups like any other managed source.
+
+---
+
+Functionalities of Connector:-
+
+-   Capable of calling private APIs (Authkeeper to remove permissions), which is only possible through browser-generated access tokens.
+-   Remove all entitlements (Admin Capabilities and Governance Group) and also disable identity upon inactive LCS (No BeforeProvisioningRule is needed)
+-   Implements Role-Based Provisioning for Governance Group and Admin Capabilities
+-   Offers the ability to add, remove, and manage identities as part of the governance group and those with admin capabilities.
+
+---
+
+The connector uses username and hashed password from the native login to call private api.
+Steps to get username and Hashed passed:-
+
+1. Go to IdentityNow login page
+2. Intercept the network using developer tools (ctrl+shift+I)
+3. Type in your admin privileged username and password
+4. Look for call that says auth
+5. The URL is the SailPoint Login URL
+6. Click on payload and copy the IDToken1 and IDToken2 which are username and hashed password respectively.
+
+[Explore the docs »](https://developer.sailpoint.com/discuss/t/identitynow-management-saas-connector/18175)
+
+[New to the CoLab? Click here »](https://developer.sailpoint.com/discuss/t/about-the-sailpoint-developer-community-colab/11230)
+
+<!-- CONTRIBUTING -->
+
+## Contributing
+
+Contributions are what make the open source community such an amazing place to learn, inspire, and create. Any contributions you make are **greatly appreciated**.
+
+If you have a suggestion that would make this better, please fork the repo and create a pull request. You can also simply open an issue with the tag `enhancement`.
+Don't forget to give the project a star! Thanks again!
+
+1. Fork the Project
+2. Create your Feature Branch (`git checkout -b feature/AmazingFeature`)
+3. Commit your Changes (`git commit -m 'Add some AmazingFeature'`)
+4. Push to the Branch (`git push origin feature/AmazingFeature`)
+5. Open a Pull Request
+
+<!-- LICENSE -->
+
+## License
+
+Distributed under the MIT License. See `LICENSE.txt` for more information.
+
+<!-- CONTACT -->
+
+## Discuss
+
+[Click Here](https://developer.sailpoint.com/discuss/new-topic?title=Your%20CoLab%20question%20title&body=Your%20CoLab%20question%20body%20here&category_id=2&tags=colab) to discuss the Colab with other users.

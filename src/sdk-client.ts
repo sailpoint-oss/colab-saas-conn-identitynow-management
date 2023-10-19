@@ -1,38 +1,43 @@
+import { AxiosError, AxiosRequestConfig } from 'axios'
 import axiosRetry from 'axios-retry'
 import {
     Configuration,
-    CreateFormDefinitionRequestBeta,
-    CreateFormInstanceRequestBeta,
-    CustomFormsBetaApi,
-    CustomFormsBetaApiFactory,
-    FormDefinitionResponseBeta,
-    FormInstanceCreatedByBeta,
-    FormInstanceRecipientBeta,
-    FormInstanceResponseBeta,
-    FormInstanceResponseBetaStateEnum,
     Paginator,
     Search,
     SearchApi,
-    SourcesApi,
     Account,
+    IdentityProfilesBetaApi,
+    GovernanceGroupsBetaApi,
+    WorkgroupDtoBeta,
+    IdentityProfileBeta,
+    GovernanceGroupsV2Api,
+    ListWorkgroups200ResponseInnerV2,
+    ListWorkgroupMembers200ResponseInnerV2,
+    IdentitiesBetaApi,
+    IdentityBeta,
+    GovernanceGroupsV2ApiModifyWorkgroupMembersRequest,
+    WorkflowBeta,
     WorkflowsBetaApi,
     WorkflowsBetaApiCreateWorkflowRequest,
-    WorkflowBeta,
     TestWorkflowRequestBeta,
-    PostExternalExecuteWorkflowRequestBeta,
-    WorkflowOAuthClientBeta,
-    IdentityProfilesBetaApi,
-    IdentityAttributeConfigBeta,
+    IdentitiesBetaApiGetIdentityRequest,
+    WorkflowsBetaApiTestWorkflowRequest,
 } from 'sailpoint-api-client'
-import { AxiosRequestConfig } from 'axios'
 import {
     AccountsApi,
+    AccountsApiDisableAccountRequest,
+    AccountsApiEnableAccountRequest,
     AccountsApiListAccountsRequest,
-    EntitlementDocument,
+    AccountsAsyncResult,
+    AuthUser,
+    AuthUserApi,
+    AuthUserApiPatchAuthUserRequest,
     IdentityDocument,
     JsonPatchOperation,
-    Transform,
-    TransformsApi,
+    LifecycleState,
+    LifecycleStatesApi,
+    LifecycleStatesApiSetLifecycleStateRequest,
+    SetLifecycleState200Response,
 } from 'sailpoint-api-client/dist/v3'
 import { URL } from 'url'
 
@@ -42,79 +47,267 @@ function sleep(ms: number) {
     return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
-// type API = BaseAPIV3 | BaseAPIBeta | BaseAPIV2 | BaseAPICC
+const retries = 10
+
+const retryCondition = (error: AxiosError): boolean => {
+    return axiosRetry.isRetryableError(error) || (error.response ? error.response.status === 429 : false)
+}
+
+const retryDelay = (retryCount: number, error: AxiosError<unknown, any>, delayFactor?: number | undefined): number => {
+    if (error.response && error.response.headers['retry-after']) {
+        return error.response.headers['retry-after'] * 1000
+    } else {
+        return axiosRetry.exponentialDelay(retryCount, error, delayFactor)
+    }
+}
+
+const axiosOptions: AxiosRequestConfig = {
+    'axios-retry': {
+        retries,
+        retryDelay,
+        retryCondition,
+    },
+}
 
 export class SDKClient {
-    private config: Configuration
-    private batchSize = 250
+    config: Configuration
 
     constructor(config: any) {
         const tokenUrl = new URL(config.baseurl).origin + TOKEN_URL_PATH
         this.config = new Configuration({ ...config, tokenUrl })
-        this.config.retriesConfig = {
-            retries: 5,
-            retryDelay: axiosRetry.exponentialDelay,
-            retryCondition: axiosRetry.isRetryableError,
-        }
+        this.config.retriesConfig = axiosOptions['axios-retry']
     }
 
-    // async *paginate(api: API, fnc: (this: any, args: PaginationParams) => Promise<AxiosResponse>) {
-    //     const response = await Paginator.paginate(api, fnc, undefined, this.batchSize)
-    //     for (const item of response.data) {
-    //         yield item
-    //     }
-    // }
+    async listWorkgroups(): Promise<WorkgroupDtoBeta[]> {
+        const api = new GovernanceGroupsBetaApi(this.config)
 
-    // async *paginateSearch(api: SearchApi, fnc: Search) {
-    //     const response = await Paginator.paginateSearchApi(api, fnc, undefined, this.batchSize)
-    //     for (const item of response.data) {
-    //         yield item
-    //     }
-    // }
+        const response = await Paginator.paginate(api, api.listWorkgroups)
 
-    async listIdentities(): Promise<IdentityDocument[]> {
+        return response.data
+    }
+
+    async listIdentityProfiles(): Promise<IdentityProfileBeta[]> {
+        const api = new IdentityProfilesBetaApi(this.config)
+
+        const response = await Paginator.paginate(api, api.listIdentityProfiles)
+
+        return response.data
+    }
+
+    async listLifecycleStates(identityProfileId: string): Promise<LifecycleState[]> {
+        const api = new LifecycleStatesApi(this.config)
+
+        const response = await api.listLifecycleStates({ identityProfileId })
+
+        return response.data
+    }
+
+    async listWorkgroupMembers(workgroupId: string): Promise<ListWorkgroupMembers200ResponseInnerV2[]> {
+        const api = new GovernanceGroupsV2Api(this.config)
+        const response = await api.listWorkgroupMembers({ workgroupId })
+
+        return response.data
+    }
+
+    async listIdentities(): Promise<IdentityBeta[]> {
+        const api = new IdentitiesBetaApi(this.config)
+
+        const response = await Paginator.paginate(api, api.listIdentities)
+
+        return response.data
+    }
+
+    async listPrivilegedIdentities(): Promise<IdentityDocument[]> {
         const api = new SearchApi(this.config)
         const search: Search = {
             indices: ['identities'],
             query: {
-                query: '*',
+                query: '@access(source.name.exact:IdentityNow)',
             },
-            sort: ['name'],
+            sort: ['id'],
             includeNested: true,
         }
 
         const response = await Paginator.paginateSearchApi(api, search)
+
+        return response.data
+    }
+
+    async listAccountsByIdentity(id: string): Promise<Account[]> {
+        const api = new AccountsApi(this.config)
+
+        const filters = `identityId eq "${id}"`
+        const listAccountsByIdentity = (
+            requestParameters?: AccountsApiListAccountsRequest,
+            axiosOptions?: AxiosRequestConfig
+        ): Promise<import('axios').AxiosResponse<Account[], any>> => {
+            return api.listAccounts({ filters })
+        }
+        const response = await Paginator.paginate(api, listAccountsByIdentity)
+
+        return response.data
+    }
+
+    async getAccountDetails(id: string): Promise<IdentityBeta> {
+        const api = new IdentitiesBetaApi(this.config)
+
+        const requestParameters: IdentitiesBetaApiGetIdentityRequest = {
+            id,
+        }
+        const response = await api.getIdentity(requestParameters)
+
+        return response.data
+    }
+
+    async addWorkgroup(id: string, workgroupId: string): Promise<void> {
+        const api = new GovernanceGroupsV2Api(this.config)
+
+        const requestParameters: GovernanceGroupsV2ApiModifyWorkgroupMembersRequest = {
+            workgroupId,
+            modifyWorkgroupMembersRequestV2: { add: [id] },
+        }
+        const response = await api.modifyWorkgroupMembers(requestParameters)
+
+        await sleep(2000)
+        return response.data
+    }
+
+    async removeWorkgroup(id: string, workgroupId: string): Promise<void> {
+        const api = new GovernanceGroupsV2Api(this.config)
+
+        const requestParameters: GovernanceGroupsV2ApiModifyWorkgroupMembersRequest = {
+            workgroupId,
+            modifyWorkgroupMembersRequestV2: { remove: [id] },
+        }
+        const response = await api.modifyWorkgroupMembers(requestParameters)
+
+        await sleep(2000)
+        return response.data
+    }
+
+    async getCapabilities(id: string): Promise<string[]> {
+        const api = new AuthUserApi(this.config)
+
+        const response = await api.getAuthUser({ id })
+        const capabilities: string[] = response.data.capabilities || []
+
+        return capabilities
+    }
+
+    async setCapabilities(id: string, capabilities: string[]): Promise<AuthUser> {
+        const api = new AuthUserApi(this.config)
+
+        const jsonPatchOperation: JsonPatchOperation[] = [
+            {
+                op: 'replace',
+                path: '/capabilities',
+                value: capabilities,
+            },
+        ]
+        const requestParameters: AuthUserApiPatchAuthUserRequest = {
+            id,
+            jsonPatchOperation,
+        }
+
+        const response = await api.patchAuthUser(requestParameters)
+
+        return response.data
+    }
+
+    async setLifecycleState(identityId: string, lifecycleStateId: string): Promise<SetLifecycleState200Response> {
+        const api = new LifecycleStatesApi(this.config)
+
+        const requestParameters: LifecycleStatesApiSetLifecycleStateRequest = {
+            identityId,
+            setLifecycleStateRequest: {
+                lifecycleStateId,
+            },
+        }
+        const response = await api.setLifecycleState(requestParameters)
+
+        return response.data
+    }
+
+    async getWorkgroup(workgroupId: string): Promise<ListWorkgroups200ResponseInnerV2> {
+        const api = new GovernanceGroupsV2Api(this.config)
+
+        const response = await api.getWorkgroup({ workgroupId })
+
         return response.data
     }
 
     async getIdentityByUID(uid: string): Promise<IdentityDocument | undefined> {
         const api = new SearchApi(this.config)
+
         const search: Search = {
             indices: ['identities'],
             query: {
                 query: `attributes.uid.exact:"${uid}"`,
             },
+            sort: ['id'],
             includeNested: true,
         }
-
         const response = await api.searchPost({ search })
 
-        return response.data[0]
+        if (response.data.length > 0) {
+            return response.data[0]
+        } else {
+            return undefined
+        }
     }
 
-    async listIdentitiesBySource(id: string): Promise<IdentityDocument[]> {
-        const api = new SearchApi(this.config)
-        const search: Search = {
-            indices: ['identities'],
-            query: {
-                query: `@accounts(source.id.exact:"${id}")`,
-            },
-            includeNested: true,
-        }
+    async disableAccount(id: string): Promise<AccountsAsyncResult> {
+        const api = new AccountsApi(this.config)
 
-        const response = await api.searchPost({ search })
+        const requestParameters: AccountsApiDisableAccountRequest = {
+            id,
+            accountToggleRequest: {
+                forceProvisioning: true,
+            },
+        }
+        const response = await api.disableAccount(requestParameters)
 
         return response.data
+    }
+
+    async enableAccount(id: string): Promise<AccountsAsyncResult> {
+        const api = new AccountsApi(this.config)
+
+        const requestParameters: AccountsApiEnableAccountRequest = {
+            id,
+            accountToggleRequest: {
+                forceProvisioning: true,
+            },
+        }
+        const response = await api.enableAccount(requestParameters)
+
+        return response.data
+    }
+
+    async listWorkflows(): Promise<WorkflowBeta[]> {
+        const api = new WorkflowsBetaApi(this.config)
+
+        const response = await api.listWorkflows(axiosOptions)
+
+        return response.data
+    }
+
+    async createWorkflow(workflow: WorkflowsBetaApiCreateWorkflowRequest): Promise<WorkflowBeta> {
+        const api = new WorkflowsBetaApi(this.config)
+
+        const response = await api.createWorkflow(workflow)
+
+        return response.data
+    }
+
+    async testWorkflow(id: string, testWorkflowRequestBeta: TestWorkflowRequestBeta) {
+        const api = new WorkflowsBetaApi(this.config)
+
+        const requestParameters: WorkflowsBetaApiTestWorkflowRequest = {
+            id,
+            testWorkflowRequestBeta,
+        }
+        const response = await api.testWorkflow(requestParameters)
     }
 
     async getIdentity(id: string): Promise<IdentityDocument | undefined> {
@@ -130,291 +323,5 @@ export class SDKClient {
         const response = await api.searchPost({ search })
 
         return response.data[0]
-    }
-
-    async listAccountsBySource(id: string): Promise<Account[]> {
-        const api = new AccountsApi(this.config)
-        const filters = `sourceId eq "${id}"`
-        const search = async (
-            requestParameters?: AccountsApiListAccountsRequest | undefined,
-            axiosOptions?: AxiosRequestConfig<any> | undefined
-        ) => {
-            return await api.listAccounts({ ...requestParameters, filters })
-        }
-
-        const response = await Paginator.paginate(api, search, undefined, this.batchSize)
-
-        return response.data
-    }
-
-    async listUncorrelatedAccounts(): Promise<Account[]> {
-        const api = new AccountsApi(this.config)
-        const filters = 'uncorrelated eq true'
-        const search = async (
-            requestParameters?: AccountsApiListAccountsRequest | undefined,
-            axiosOptions?: AxiosRequestConfig<any> | undefined
-        ) => {
-            return await api.listAccounts({ ...requestParameters, filters })
-        }
-
-        const response = await Paginator.paginate(api, search, undefined, this.batchSize)
-
-        return response.data
-    }
-
-    // async getIdenticalIdentities(sourceId: string, attributes: object): Promise<IdentityDocument[]> {
-    //     if (Object.keys(attributes).length > 0) {
-    //         const conditions: string[] = []
-    //         conditions.push(`@accounts(source.id:${sourceId})`)
-    //         // conditions.push(`NOT attributes.uid.exact:"${uid}"`)
-    //         for (const [key, value] of Object.entries(attributes) as [string, string][]) {
-    //             conditions.push(`attributes.${key}.exact:"${value}"`)
-    //         }
-    //         const query = conditions.join(' AND ')
-    //         const api = new SearchApi(this.config)
-    //         const search: Search = {
-    //             indices: ['identities'],
-    //             query: {
-    //                 query,
-    //             },
-    //             sort: ['-name'],
-    //             includeNested: false,
-    //         }
-
-    //         const response = await Paginator.paginateSearchApi(api, search, undefined, this.batchSize)
-    //         return response.data
-    //     } else {
-    //         return []
-    //     }
-    // }
-
-    // async getSimilarIdentities(sourceId: string, attributes: object): Promise<IdentityDocument[]> {
-    //     if (Object.keys(attributes).length > 0) {
-    //         const conditions: string[] = []
-    //         // conditions.push(`NOT attributes.uid.exact:"${uid}"`)
-    //         conditions.push(`@accounts(source.id:${sourceId})`)
-    //         for (const [key, value] of Object.entries(attributes) as [string, string][]) {
-    //             const subconditions: string[] = []
-    //             subconditions.push(`attributes.${key}.exact:/.*${value}.*/`)
-    //             subconditions.push(`attributes.${key}:"${value}"~1`)
-    //             const subquery = subconditions.join(' OR ')
-    //             conditions.push(subquery)
-    //         }
-    //         const query = conditions.map((x) => `(${x})`).join(' AND ')
-    //         const api = new SearchApi(this.config)
-    //         const search: Search = {
-    //             indices: ['identities'],
-    //             query: {
-    //                 query,
-    //             },
-    //             sort: ['-name'],
-    //             includeNested: false,
-    //         }
-
-    //         const response = await Paginator.paginateSearchApi(api, search, undefined, this.batchSize)
-    //         return response.data
-    //     } else {
-    //         return []
-    //     }
-    // }
-
-    async listSources() {
-        const api = new SourcesApi(this.config)
-
-        const response = await Paginator.paginate(api, api.listSources)
-
-        return response.data
-    }
-
-    async listSourceSchemas(sourceId: string) {
-        const api = new SourcesApi(this.config)
-
-        const response = await api.listSourceSchemas({ sourceId })
-
-        return response.data
-    }
-
-    async listForms(): Promise<FormDefinitionResponseBeta[]> {
-        const api = new CustomFormsBetaApi(this.config)
-
-        const response = await api.searchFormDefinitionsByTenant()
-
-        return response.data.results ? response.data.results : []
-    }
-
-    async deleteForm(formDefinitionID: string): Promise<void> {
-        const api = new CustomFormsBetaApi(this.config)
-
-        const response = await api.deleteFormDefinition({ formDefinitionID })
-    }
-
-    async listFormInstances(): Promise<FormInstanceResponseBeta[]> {
-        const api = new CustomFormsBetaApi(this.config)
-
-        const response = await api.searchFormInstancesByTenant()
-
-        return response.data.results ? response.data.results : []
-    }
-
-    async createTransform(transform: Transform): Promise<Transform> {
-        const api = new TransformsApi(this.config)
-
-        const response = await api.createTransform({ transform })
-
-        return response.data
-    }
-
-    async listWorkflows(): Promise<WorkflowBeta[]> {
-        const api = new WorkflowsBetaApi(this.config)
-
-        const response = await api.listWorkflows()
-
-        return response.data
-    }
-
-    async correlateAccount(identityId: string, id: string): Promise<object> {
-        const api = new AccountsApi(this.config)
-        const jsonPatchOperation: JsonPatchOperation[] = [
-            {
-                op: 'replace',
-                path: '/identityId',
-                value: identityId,
-            },
-        ]
-        const response = await api.updateAccount({ id, jsonPatchOperation })
-
-        return response.data
-    }
-
-    async createForm(form: CreateFormDefinitionRequestBeta): Promise<FormDefinitionResponseBeta> {
-        const api = new CustomFormsBetaApi(this.config)
-
-        const response = await api.createFormDefinition({
-            body: form,
-        })
-
-        return response.data
-    }
-
-    async createFormInstance(
-        formDefinitionId: string,
-        formInput: { [key: string]: any },
-        recipientList: string[],
-        sourceId: string,
-        expire: string
-    ): Promise<FormInstanceResponseBeta> {
-        const api = CustomFormsBetaApiFactory(this.config)
-
-        const recipients: FormInstanceRecipientBeta[] = recipientList.map((x) => ({ id: x, type: 'IDENTITY' }))
-        const createdBy: FormInstanceCreatedByBeta = {
-            id: sourceId,
-            type: 'SOURCE',
-        }
-        const body: CreateFormInstanceRequestBeta = {
-            formDefinitionId,
-            recipients,
-            createdBy,
-            expire,
-            formInput,
-            standAloneForm: true,
-        }
-
-        const response = await api.createFormInstance(body)
-
-        return response.data
-    }
-
-    async setFormInstanceState(
-        formInstanceId: string,
-        state: FormInstanceResponseBetaStateEnum
-    ): Promise<FormInstanceResponseBeta> {
-        const api = CustomFormsBetaApiFactory(this.config)
-
-        const body: { [key: string]: any }[] = [
-            {
-                op: 'replace',
-                path: '/state',
-                value: state,
-            },
-        ]
-        const response = await api.patchFormInstance(formInstanceId, body)
-
-        return response.data
-    }
-
-    async createWorkflow(workflow: WorkflowsBetaApiCreateWorkflowRequest): Promise<WorkflowBeta> {
-        const api = new WorkflowsBetaApi(this.config)
-
-        const response = await api.createWorkflow(workflow)
-
-        return response.data
-    }
-
-    async createWorkflowExternalTrigger(id: string): Promise<WorkflowOAuthClientBeta> {
-        const api = new WorkflowsBetaApi(this.config)
-
-        const response = await api.postWorkflowExternalTrigger({ id })
-
-        return response.data
-    }
-
-    async testWorkflow(id: string, testWorkflowRequestBeta: TestWorkflowRequestBeta) {
-        const api = new WorkflowsBetaApi(this.config)
-
-        const response = await api.testWorkflow({
-            id,
-            testWorkflowRequestBeta,
-        })
-    }
-
-    async triggerWorkflowExternal(
-        id: string,
-        postExternalExecuteWorkflowRequestBeta: PostExternalExecuteWorkflowRequestBeta
-    ) {
-        const api = new WorkflowsBetaApi(this.config)
-
-        const response = await api.postExternalExecuteWorkflow({
-            id,
-            postExternalExecuteWorkflowRequestBeta,
-        })
-    }
-
-    async listEntitlementsBySource(sourceId: string): Promise<EntitlementDocument[]> {
-        const api = new SearchApi(this.config)
-
-        const search: Search = {
-            indices: ['entitlements'],
-            query: {
-                query: `source.id:${sourceId}`,
-            },
-            includeNested: true,
-        }
-
-        const response = await api.searchPost({ search })
-
-        return response.data
-    }
-
-    async getTransformByName(name: string): Promise<Transform | undefined> {
-        const api = new TransformsApi(this.config)
-
-        const response = await api.listTransforms()
-
-        return response.data.find((x) => x.name === name)
-    }
-
-    async testTransform(
-        identityId: string,
-        identityAttributeConfig: IdentityAttributeConfigBeta
-    ): Promise<string | undefined> {
-        const api = new IdentityProfilesBetaApi(this.config)
-
-        const response = await api.generateIdentityPreview({
-            identityPreviewRequestBeta: { identityId, identityAttributeConfig },
-        })
-        const attributes = response.data.previewAttributes
-        const testAttribute = attributes?.find((x) => x.name === 'uid')
-
-        return testAttribute && testAttribute.value ? testAttribute.value.toString() : undefined
     }
 }
