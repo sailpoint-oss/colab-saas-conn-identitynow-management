@@ -1,18 +1,20 @@
 import { Attributes } from '@sailpoint/connector-sdk'
 
-export class Role {
+export class Review {
     identity: string
     uuid: string
-    type: string = 'group'
+    type: string
     attributes: Attributes
 
-    constructor(object: any) {
+    constructor(id: string, name: string, entity: string, url: string) {
         this.attributes = {
-            type: 'Role',
-            name: object.name,
-            id: object.value,
-            description: object.description,
+            id,
+            name,
+            entity,
+            url,
+            description: url,
         }
+        this.type = 'review'
         this.identity = this.attributes.id as string
         this.uuid = this.attributes.name as string
     }

@@ -1,8 +1,8 @@
 @url = http://localhost:3000
-@idnUrl = xxx
+@baseurl = xxx
 
-@patId = xxx
-@patSecret = xxx
+@clientId = xxx
+@clientSecret = xxx
 
 
 ### std:test-connection
@@ -13,9 +13,9 @@ Content-Type: application/json
   "type": "std:test-connection",
   "input": {},
   "config": {
-        "patId": "{{patId}}",
-        "patSecret": "{{patSecret}}",
-        "idnUrl": "{{idnUrl}}"
+        "patId": "{{clientId}}",
+        "patSecret": "{{clientSecret}}",
+        "idnUrl": "{{baseurl}}"
     }
 }
 
