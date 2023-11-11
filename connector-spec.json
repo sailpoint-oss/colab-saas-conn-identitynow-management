@@ -130,7 +130,7 @@
     "entitlementSchemas": [
         {
             "type": "level",
-            "identityAttribute": "value",
+            "identityAttribute": "id",
             "displayAttribute": "name",
             "attributes": [
                 {
@@ -157,7 +157,7 @@
         },
         {
             "type": "workgroup",
-            "identityAttribute": "value",
+            "identityAttribute": "id",
             "displayAttribute": "name",
             "attributes": [
                 {
@@ -184,7 +184,7 @@
         },
         {
             "type": "lcs",
-            "identityAttribute": "value",
+            "identityAttribute": "id",
             "displayAttribute": "name",
             "attributes": [
                 {
