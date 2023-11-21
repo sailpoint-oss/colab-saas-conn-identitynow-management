@@ -32,6 +32,7 @@ import { Workgroup } from './model/workgroup'
 import { levels } from './data/levels'
 import { LCS, LCSSource } from './model/lcs'
 import { SDKClient } from './sdk-client'
+import { jwtDecode } from 'jwt-decode'
 import {
     BaseAccount,
     IdentityBeta,
@@ -41,7 +42,6 @@ import {
     WorkflowBeta,
     WorkgroupDtoBeta,
 } from 'sailpoint-api-client'
-import jwt_decode from 'jwt-decode'
 
 import { EmailWorkflow } from './model/emailWorkflow'
 import { ErrorEmail } from './model/email'
@@ -282,7 +282,7 @@ export const connector = async () => {
         logger.info('Email workflow already present')
     } else {
         const accessToken = await client.config.accessToken
-        const jwt = jwt_decode(accessToken as string) as any
+        const jwt = jwtDecode(accessToken as string) as any
         const identityId = jwt.identity_id
         const owner: Owner = {
             id: identityId,
