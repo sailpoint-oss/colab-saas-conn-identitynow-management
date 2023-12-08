@@ -32,6 +32,7 @@ import { Workgroup } from './model/workgroup'
 import { levels } from './data/levels'
 import { LCS, LCSSource } from './model/lcs'
 import { SDKClient } from './sdk-client'
+import { jwtDecode } from 'jwt-decode'
 import {
     BaseAccount,
     IdentityBeta,
@@ -281,7 +282,7 @@ export const connector = async () => {
         logger.info('Email workflow already present')
     } else {
         const accessToken = await client.config.accessToken
-        const jwt = jwt_decode(accessToken as string) as any
+        const jwt = jwtDecode(accessToken as string) as any
         const identityId = jwt.identity_id
         const owner: Owner = {
             id: identityId,
@@ -712,7 +713,4 @@ export const connector = async () => {
                 res.send(schema)
             }
         )
-}
-function jwt_decode(arg0: string): any {
-    throw new Error('Function not implemented.')
 }
