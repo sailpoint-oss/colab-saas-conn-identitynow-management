@@ -261,7 +261,7 @@ export class SDKClient {
         const api = new IdentitiesBetaApi(this.config)
 
         const requestParameters: IdentitiesBetaApiListIdentitiesRequest = {
-            filters: `alias eq "${uid}"`,
+            filters: `uid eq "${uid}"`,
         }
         const response = await api.listIdentities(requestParameters)
 
