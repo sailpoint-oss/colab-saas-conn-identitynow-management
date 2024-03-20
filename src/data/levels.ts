@@ -63,16 +63,6 @@ export const levels: LevelSource[] = [
         description: 'Access Intelligence Center - Admin access to IdentityNow',
     },
     {
-        name: 'Cloud Governance - Admin',
-        value: 'CLOUD_GOV_ADMIN',
-        description: 'Admin access to Cloud Governance',
-    },
-    {
-        name: 'Cloud Governance - User',
-        value: 'CLOUD_GOV_USER',
-        description: 'User access to Cloud Governance',
-    },
-    {
         name: 'SaaS Management - Admin',
         value: 'SAAS_MANAGEMENT_ADMIN',
         description: 'Admin access to SaaS Management',
@@ -83,9 +73,23 @@ export const levels: LevelSource[] = [
         description: 'Reader access to SaaS Management',
     },
     {
-        name: 'User',
-        value: 'user',
-        description:
-            'User access to IdentityNow. No special permission, it just enables the identity to be managed in a JML flow',
+        name: 'Data Access Security Administrator',
+        value: 'das:ui-administrator',
+        description: 'Administrator access to Data Access Security',
+    },
+    {
+        name: 'Data Access Security Compliance Manager',
+        value: 'das:ui-compliance_manager',
+        description: 'Compliance Manager access to Data Access Security',
+    },
+    {
+        name: 'Data Access Data Owner',
+        value: 'das:ui-data_owner',
+        description: 'Data Owner access to Data Access Security',
+    },
+    {
+        name: 'Data Access Security Auditor',
+        value: 'das:ui-auditor',
+        description: 'Auditor access to Data Access Security',
     },
 ]

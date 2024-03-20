@@ -48,6 +48,11 @@
                     "sectionHelpMessage": "Add your configuration details here",
                     "items": [
                         {
+                            "key": "enableReports",
+                            "label": "Enable error reports? (workflows needed)",
+                            "type": "checkbox"
+                        },
+                        {
                             "key": "enableLevels",
                             "label": "Enable user level processing?",
                             "type": "checkbox"
@@ -63,8 +68,8 @@
                             "type": "checkbox"
                         },
                         {
-                            "key": "removeGroups",
-                            "label": "Remove all entitlements on Disable",
+                            "key": "allIdentities",
+                            "label": "Aggregate all identities regardless of their user level?",
                             "type": "checkbox"
                         }
                     ]
@@ -100,30 +105,6 @@
                 "name": "displayName",
                 "type": "string",
                 "description": "Display name"
-            },
-            {
-                "name": "levels",
-                "type": "string",
-                "description": "User levels",
-                "multi": true,
-                "entitlement": true,
-                "managed": true
-            },
-            {
-                "name": "workgroups",
-                "type": "string",
-                "description": "Governance groups",
-                "multi": true,
-                "entitlement": true,
-                "managed": true
-            },
-            {
-                "name": "lcs",
-                "type": "string",
-                "description": "Lifecycle state",
-                "multi": false,
-                "entitlement": true,
-                "managed": true
             }
         ]
     },
